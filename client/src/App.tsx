@@ -5,6 +5,7 @@ import { ScreenSkeleton } from "./components/ui";
 import { useAuth } from "./lib/auth";
 import { AdminAudit, AdminClose, AdminHome, AdminImport, AdminInterest, AdminLoans, AdminMember, AdminMembers, AdminPay, AdminPayments, AdminSettings } from "./pages/admin";
 import { LoginPage } from "./pages/login";
+import { SetupMainAdminPage } from "./pages/setup-main-admin";
 import { MemberHome, MemberInterest, MemberLoan, MemberMonthReport, MemberMore, MemberPayments } from "./pages/member";
 import { AdminReports, MemberReports } from "./pages/reports";
 import {
@@ -41,6 +42,7 @@ export function App() {
       <ScrollToTop />
       <Routes>
       <Route path="/" element={loading ? <ScreenSkeleton /> : session ? <Navigate to={homeFor(session.user.role)} replace /> : <LoginPage />} />
+      <Route path="/setup" element={loading ? <ScreenSkeleton /> : session ? <Navigate to={homeFor(session.user.role)} replace /> : <SetupMainAdminPage />} />
       <Route path="/platform" element={<Gate role="platform"><PlatformHome /></Gate>} />
       <Route path="/app" element={<Gate role="staff"><AdminHome /></Gate>} />
       <Route path="/app/members" element={<Gate role="staff"><AdminMembers /></Gate>} />

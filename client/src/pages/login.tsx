@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button, Field } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth, type Session } from "../lib/auth";
@@ -35,6 +35,13 @@ export function LoginPage() {
   const [choices, setChoices] = useState<Choice[]>([]);
   const [selectionToken, setSelectionToken] = useState("");
   const [showDemoLogins, setShowDemoLogins] = useState(demoLoginsEnabled);
+  const [mainSetup, setMainSetup] = useState(false);
+
+  useEffect(() => {
+    api<{ needsMainAdmin: boolean; setupEnabled: boolean }>("/api/auth/setup-main-admin/status")
+      .then((row) => setMainSetup(row.setupEnabled))
+      .catch(() => setMainSetup(false));
+  }, []);
 
   useEffect(() => {
     const sync = () => setShowDemoLogins(demoLoginsEnabled());
@@ -136,6 +143,14 @@ export function LoginPage() {
           <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Your password" />
           {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-clay">{error}</p>}
           <Button type="submit" disabled={busy || !username || !password}>{busy ? "Signing in…" : "Sign in"}</Button>
+          {mainSetup && (
+            <p className="text-center text-sm text-muted">
+              First time on production?{" "}
+              <Link to="/setup" className="font-semibold text-moss">
+                Create main admin
+              </Link>
+            </p>
+          )}
         </form>
         )}
         {showDemoLogins && (

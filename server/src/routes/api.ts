@@ -44,7 +44,14 @@ import {
 } from "../services/books.js";
 import { buildSampleWorkbook } from "../lib/import-sample.js";
 import { parseWorkbook } from "../services/import-sheet.js";
-import { createSocietyAdmin, listPlatform, setSocietyAdminActive, setSocietyAdminPassword } from "../services/platform.js";
+import {
+  createSocietyAdmin,
+  listPlatform,
+  mainAdminSetupStatus,
+  setSocietyAdminActive,
+  setSocietyAdminPassword,
+  setupMainAdmin,
+} from "../services/platform.js";
 import { listNotifications, markNotificationRead } from "../services/notifications.js";
 import { adminDashboard, listMembers, loanHistory, memberStatement, memberTimelineReportRows, reportData, whatsAppDraft } from "../services/read.js";
 
@@ -144,6 +151,38 @@ api.post(
 api.get("/health", (_req, res) => {
   res.json({ ok: true, product: "Society Finance" });
 });
+
+api.get(
+  "/auth/setup-main-admin/status",
+  asyncRoute(async (_req, res) => {
+    res.json(await mainAdminSetupStatus());
+  }),
+);
+
+api.post(
+  "/auth/setup-main-admin",
+  loginLimit,
+  asyncRoute(async (req, res) => {
+    const body = z
+      .object({
+        setupToken: z.string().min(16).max(200),
+        username: z.string().trim().min(3).max(32),
+        password: z.string().min(8).max(100),
+        name: z.string().trim().min(2).max(80).optional(),
+      })
+      .parse(req.body);
+    const user = await setupMainAdmin(body);
+    await signInAs(res, {
+      id: user.id,
+      societyId: user.societyId,
+      role: user.role,
+      memberId: user.memberId,
+      name: user.name,
+      username: user.username,
+      tokenVersion: user.tokenVersion,
+    });
+  }),
+);
 
 api.post(
   "/auth/login",

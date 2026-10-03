@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import type { AuthUser } from "../middleware/auth.js";
 import { money } from "../engine/finance.js";
 import { HttpError } from "../lib/http.js";
@@ -192,4 +193,43 @@ export async function setSocietyAdminActive(auth: AuthUser, userId: string, acti
     },
   });
   return { id: user.id, username: user.username, isActive: active, societyName: user.society?.name ?? "" };
+}
+
+function setupTokenMatches(provided: string) {
+  const expected = (process.env.MAIN_ADMIN_SETUP_TOKEN ?? "").trim();
+  if (expected.length < 16) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/** True when production has no main admin yet and MAIN_ADMIN_SETUP_TOKEN is configured. */
+export async function mainAdminSetupStatus() {
+  const needsMainAdmin = (await prisma.user.count({ where: { role: "MAIN_ADMIN" } })) === 0;
+  const token = (process.env.MAIN_ADMIN_SETUP_TOKEN ?? "").trim();
+  return { needsMainAdmin, setupEnabled: needsMainAdmin && token.length >= 16 };
+}
+
+/** One-time hosted setup — not a public signup; requires MAIN_ADMIN_SETUP_TOKEN. */
+export async function setupMainAdmin(input: { setupToken: string; username: string; password: string; name?: string }) {
+  const status = await mainAdminSetupStatus();
+  if (!status.setupEnabled) {
+    throw new HttpError(403, "Main admin setup is not available. Sign in, or ask whoever runs the server to create the account.");
+  }
+  if (!setupTokenMatches(input.setupToken.trim())) {
+    throw new HttpError(403, "Setup token is incorrect.");
+  }
+  const username = normalizeUsername(input.username);
+  await assertUsernameFree(username);
+  if (input.password.length < 8) throw new HttpError(400, "Password must be at least 8 characters");
+  const name = (input.name?.trim() || "Main admin").slice(0, 80);
+  return prisma.user.create({
+    data: {
+      role: "MAIN_ADMIN",
+      name,
+      username,
+      passwordHash: await bcrypt.hash(input.password, 10),
+    },
+  });
 }

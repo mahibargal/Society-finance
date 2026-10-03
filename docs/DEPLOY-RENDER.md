@@ -37,16 +37,34 @@ Local production smoke test: copy `server/.env.production.example` → `server/.
 
 On start, the server runs `prisma db push` against `DATABASE_URL` and does **not** load the June–October demo register.
 
-## 3. First login
+## 3. First login (main admin)
 
-With demo seed disabled, create access manually:
+Production does not auto-create `main`. Pick **one** method:
 
-1. Insert a **MAIN_ADMIN** user (or run `npm run seed -w server` **once** locally against a copy of prod — not recommended on prod).
-2. Sign in as main admin → create society owner accounts.
+### A — Setup page (recommended on Render)
 
-For a fresh production society, use the platform UI after main admin exists, or seed only in local dev.
+1. In the web service **Environment**, add `MAIN_ADMIN_SETUP_TOKEN` (at least 16 random characters). Save and redeploy.
+2. Open `https://YOUR-SERVICE.onrender.com/setup` (link also appears on the login page).
+3. Enter the token, choose username/password, submit → you land on **Societies** (`/platform`).
+4. **Remove** `MAIN_ADMIN_SETUP_TOKEN` from Render and redeploy so the page cannot be used again.
 
-## 4. Optional: client on a separate Static Site
+### B — Bootstrap from your PC
+
+```powershell
+cd server
+$env:DATABASE_URL = "PASTE_RENDER_EXTERNAL_DATABASE_URL"
+$env:NODE_ENV = "development"
+$env:APP_ENV = "development"
+npx tsx src/bootstrap-main-admin.ts
+```
+
+Sign in as username `main`, password `Main@2026` (change after login).
+
+## 4. Society admin (office / abc / …)
+
+Sign in as **main admin** → **Societies** → **Add a society admin** → choose **New society** or **Existing society**. That user signs in at `/` and uses `/app` (not `/platform`).
+
+## 5. Optional: client on a separate Static Site
 
 If you split UI and API:
 
@@ -55,6 +73,6 @@ If you split UI and API:
 
 Recommended: **single web service** (API + static files) as configured in `server/src/app.ts`.
 
-## 5. Local dev scripts (wipe, heal)
+## 6. Local dev scripts (wipe, heal)
 
 Not deployed. See [local-dev.example/README.md](../local-dev.example/README.md).
