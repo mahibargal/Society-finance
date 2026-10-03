@@ -1,0 +1,130 @@
+[
+  {
+    "id": "01-login",
+    "title": "Sign-in screen",
+    "path": "/",
+    "file": "screenshots/01-login.png",
+    "ok": true
+  },
+  {
+    "id": "02-staff-home",
+    "title": "Staff dashboard (open month & totals)",
+    "path": "/app",
+    "staff": true,
+    "file": "screenshots/02-staff-home.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "03-members",
+    "title": "Member register",
+    "path": "/app/members",
+    "staff": true,
+    "file": "screenshots/03-members.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "04-member-detail",
+    "title": "Member profile & month-wise history",
+    "staff": true,
+    "file": "screenshots/04-member-detail.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "05-collect",
+    "title": "Collect payment",
+    "path": "/app/pay",
+    "staff": true,
+    "file": "screenshots/05-collect.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "06-payments",
+    "title": "Payment receipts",
+    "path": "/app/payments",
+    "staff": true,
+    "file": "screenshots/06-payments.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "07-loans",
+    "title": "Loans",
+    "path": "/app/loans",
+    "staff": true,
+    "file": "screenshots/07-loans.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "08-interest",
+    "title": "Interest pool & distribution",
+    "path": "/app/interest",
+    "staff": true,
+    "file": "screenshots/08-interest.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "09-close-month",
+    "title": "Monthly close",
+    "path": "/app/close",
+    "staff": true,
+    "file": "screenshots/09-close-month.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "10-reports",
+    "title": "Reports hub",
+    "path": "/app/reports",
+    "staff": true,
+    "file": "screenshots/10-reports.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "11-month-sheet",
+    "title": "Month sheet (dues)",
+    "path": "/app/month-sheet",
+    "staff": true,
+    "file": "screenshots/11-month-sheet.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "12-settings",
+    "title": "Society settings",
+    "path": "/app/settings",
+    "staff": true,
+    "file": "screenshots/12-settings.png",
+    "ok": false,
+    "error": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================"
+  },
+  {
+    "id": "13-platform",
+    "title": "Main admin — societies",
+    "path": "/platform",
+    "file": "screenshots/13-platform.png",
+    "ok": false,
+    "error": "ReferenceError: session is not defined"
+  },
+  {
+    "id": "14-member-home",
+    "title": "Member home (my dues)",
+    "path": "/me",
+    "file": "screenshots/14-member-home.png",
+    "ok": false,
+    "error": "ReferenceError: session is not defined"
+  },
+  {
+    "id": "15-member-reports",
+    "title": "Member reports (read-only)",
+    "path": "/me/reports",
+    "file": "screenshots/15-member-reports.png",
+    "ok": true
+  }
+]

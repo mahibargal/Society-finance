@@ -1,0 +1,18 @@
+---
+description: Preserve existing behavior when changing Society Finance code
+alwaysApply: true
+---
+
+# Backward compatibility and regression safety
+
+When changing this codebase, **existing behavior must keep working** unless the user explicitly asks for a breaking change.
+
+Before finishing any task:
+
+1. **Trace callers and consumers** — API routes, client `api()` calls, report/PDF/Excel export paths, auth cookies, and shared refresh hooks (`booksVersion`, `bumpBooks`).
+2. **Prefer additive changes** — New fields or optional parameters over renaming or removing shapes clients rely on (e.g. support both array and `{ rows, years, periods }` when APIs evolved).
+3. **Match established patterns** — If one report (e.g. month-sheet) already does something, extend the same path for siblings (e.g. month-collected) instead of a one-off UI-only fix.
+4. **Avoid surprise refetches** — Do not add global listeners (focus, visibility) that reload data unless the user asked for live sync; use explicit `bumpBooks()` after mutations.
+5. **Verify after edits** — Run or extend relevant tests (`server` vitest, surface tests for `/api/reports/*`); smoke-check stale API vs new client shapes when touching contracts.
+
+Minimize diff scope, but never ship a change that breaks a flow that worked before the change.

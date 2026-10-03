@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: society
+      POSTGRES_PASSWORD: society
+      POSTGRES_DB: society
+    ports:
+      - "5432:5432"
+    volumes:
+      - society_pg:/var/lib/postgresql/data
+
+volumes:
+  society_pg:

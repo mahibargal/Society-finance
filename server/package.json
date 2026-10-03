@@ -1,0 +1,48 @@
+{
+  "name": "server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development APP_ENV=development tsx watch src/index.ts",
+    "start": "cross-env NODE_ENV=production tsx src/index.ts",
+    "start:dev": "cross-env NODE_ENV=development APP_ENV=development tsx src/index.ts",
+    "test": "vitest run",
+    "seed": "tsx src/seed.ts",
+    "bootstrap:main": "cross-env NODE_ENV=development APP_ENV=development tsx src/bootstrap-main-admin.ts",
+    "bootstrap:office": "cross-env NODE_ENV=development APP_ENV=development tsx src/bootstrap-office-admin.ts",
+    "db:push": "prisma db push",
+    "generate": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^17.2.2",
+    "embedded-postgres": "^18.1.0-beta.16",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "tsx": "^4.20.5",
+    "multer": "^2.0.2",
+    "pdfkit": "^0.17.2",
+    "xlsx": "^0.18.5",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.5.2",
+    "@types/pdfkit": "^0.17.3",
+    "cross-env": "^7.0.3",
+    "prisma": "^6.16.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

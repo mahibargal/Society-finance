@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  MAIN_ADMIN
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LoanStatus {
+  PENDING
+  ACTIVE
+  PARTIALLY_PAID
+  COMPLETED
+  OVERDUE
+  CANCELLED
+}
+
+enum LoanTransactionType {
+  DISBURSEMENT
+  PRINCIPAL_REPAYMENT
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum LedgerType {
+  MEMBER_CONTRIBUTION
+  LOAN_DISBURSEMENT
+  PRINCIPAL_REPAYMENT
+  INTEREST_ACCRUAL
+  INTEREST_COLLECTION
+  INTEREST_DISTRIBUTION
+  PENALTY_COLLECTION
+  WITHDRAWAL
+  REFUND
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum CashEffect {
+  IN
+  OUT
+  NONE
+}
+
+enum DistributionStatus {
+  CONFIRMED
+  REVERSED
+}
+
+enum MonthStatus {
+  OPEN
+  CLOSED
+}
+
+enum PaymentStatus {
+  RECORDED
+  REVERSED
+}
+
+model Society {
+  id                              String   @id @default(cuid())
+  name                            String
+  address                         String   @default("")
+  phone                           String   @default("")
+  email                           String   @default("")
+  logoUrl                         String?
+  currency                        String   @default("INR")
+  interestRate                    Decimal  @db.Decimal(8, 6)
+  defaultMonthlyShare            Decimal  @default(500.00) @db.Decimal(14, 2)
+  interestCalculationFrequency    String   @default("MONTHLY")
+  interestCalculationMethod       String   @default("PERCENT_OF_OUTSTANDING_PRINCIPAL")
+  interestDistributionFrequency   String   @default("MONTHLY")
+  interestEligibilityRule         String   @default("ALL_ACTIVE_MEMBERS")
+  distributionMethod              String   @default("EQUAL")
+  roundingPolicy                  String   @default("UNIFORM_HALF_UP_REMAINDER")
+  paymentAllocationOrder          String
+  penaltyMethod                   String   @default("MANUAL")
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+  users                           User[]
+  members                         Member[]
+  loans                           Loan[]
+  payments                        Payment[]
+  ledger                          LedgerEntry[]
+  distributions                   InterestDistribution[]
+  months                          AccountingMonth[]
+  notifications                   Notification[]
+  auditLogs                       AuditLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  societyId    String?
+  society      Society? @relation(fields: [societyId], references: [id])
+  memberId     String?  @unique
+  member       Member?  @relation(fields: [memberId], references: [id])
+  role         UserRole
+  name         String
+  username     String?  @unique
+  email        String   @default("")
+  mobile       String   @default("")
+  passwordHash String
+  isActive     Boolean  @default(true)
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([societyId])
+}
+
+model Member {
+  id                 String       @id @default(cuid())
+  societyId          String
+  society            Society      @relation(fields: [societyId], references: [id])
+  memberNumber       Int
+  name               String
+  nameLatin          String       @default("")
+  mobile             String       @default("")
+  email              String       @default("")
+  address            String       @default("")
+  joiningDate        DateTime
+  status             MemberStatus @default(ACTIVE)
+  monthlyShare       Decimal      @db.Decimal(14, 2)
+  shareBalance       Decimal      @default(0) @db.Decimal(14, 2)
+  interestEarned     Decimal      @default(0) @db.Decimal(14, 2)
+  interestWithdrawn  Decimal      @default(0) @db.Decimal(14, 2)
+  interestBalance    Decimal      @default(0) @db.Decimal(14, 2)
+  loanOutstanding    Decimal      @default(0) @db.Decimal(14, 2)
+  exitedAt           DateTime?
+  /** Share register and payment sync ignore ledger/payments before this month (set when a member rejoins). */
+  shareBooksFromPeriod String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  user               User?
+  loans              Loan[]
+  statements         MemberMonth[]
+  shareTransactions  ShareTransaction[]
+  payments           Payment[]
+  distributionEntries InterestDistributionEntry[]
+  penalties          Penalty[]
+  interestEvents     InterestEvent[]
+
+  @@unique([societyId, memberNumber])
+  @@index([societyId, status])
+}
+
+model ShareTransaction {
+  id           String   @id @default(cuid())
+  societyId    String
+  memberId     String
+  member       Member   @relation(fields: [memberId], references: [id])
+  date         DateTime
+  period       String
+  amount       Decimal  @db.Decimal(14, 2)
+  cashEffect   Decimal  @db.Decimal(14, 2)
+  reason       String
+  reference    String
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  @@index([societyId, memberId])
+  @@index([societyId, period])
+}
+
+model Loan {
+  id                 String     @id @default(cuid())
+  societyId          String
+  society            Society    @relation(fields: [societyId], references: [id])
+  memberId           String
+  member             Member     @relation(fields: [memberId], references: [id])
+  originalPrincipal  Decimal    @db.Decimal(14, 2)
+  loanDate           DateTime
+  interestRate       Decimal    @db.Decimal(8, 6)
+  interestType       String
+  outstandingPrincipal Decimal  @db.Decimal(14, 2)
+  scheduledPrincipal Decimal    @db.Decimal(14, 2)
+  status             LoanStatus
+  purpose            String     @default("")
+  notes              String     @default("")
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  transactions       LoanTransaction[]
+
+  @@index([societyId, memberId])
+}
+
+model LoanTransaction {
+  id          String              @id @default(cuid())
+  societyId   String
+  loanId      String
+  loan        Loan                @relation(fields: [loanId], references: [id])
+  memberId    String
+  date        DateTime
+  period      String
+  type        LoanTransactionType
+  amount      Decimal             @db.Decimal(14, 2)
+  balanceAfter Decimal            @db.Decimal(14, 2)
+  reason      String
+  reference   String
+  createdById String
+  createdAt   DateTime            @default(now())
+
+  @@index([societyId, loanId])
+}
+
+model MemberMonth {
+  id                   String  @id @default(cuid())
+  societyId            String
+  memberId             String
+  member               Member  @relation(fields: [memberId], references: [id])
+  period               String
+  openingShares        Decimal @db.Decimal(14, 2)
+  monthlyShare         Decimal @db.Decimal(14, 2)
+  shareMovement        Decimal @db.Decimal(14, 2)
+  arrearsCash          Decimal @default(0) @db.Decimal(14, 2)
+  shareCashPending     Decimal @default(0) @db.Decimal(14, 2)
+  closingShares        Decimal @db.Decimal(14, 2)
+  openingPrincipal     Decimal @db.Decimal(14, 2)
+  principalDue         Decimal @db.Decimal(14, 2)
+  principalCollected   Decimal @default(0) @db.Decimal(14, 2)
+  previousInterest     Decimal @db.Decimal(14, 2)
+  currentInterest      Decimal @db.Decimal(14, 2)
+  interestCollected    Decimal @default(0) @db.Decimal(14, 2)
+  interestOutstanding  Decimal @db.Decimal(14, 2)
+  penalty              Decimal @db.Decimal(14, 2)
+  penaltyCollected     Decimal @default(0) @db.Decimal(14, 2)
+  totalInstallment     Decimal @db.Decimal(14, 2)
+
+  @@unique([societyId, memberId, period])
+  @@index([societyId, period])
+}
+
+model InterestEvent {
+  id          String   @id @default(cuid())
+  societyId   String
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id])
+  date        DateTime
+  period      String
+  kind        String
+  amount      Decimal  @db.Decimal(14, 2)
+  reason      String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([societyId, period, kind])
+}
+
+model Penalty {
+  id               String   @id @default(cuid())
+  societyId        String
+  memberId         String
+  member           Member   @relation(fields: [memberId], references: [id])
+  period           String
+  date             DateTime
+  amount           Decimal  @db.Decimal(14, 2)
+  collectedAmount  Decimal  @default(0) @db.Decimal(14, 2)
+  source           String
+  reason           String
+  createdById      String
+  createdAt        DateTime @default(now())
+
+  @@index([societyId, period])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  societyId       String
+  society         Society       @relation(fields: [societyId], references: [id])
+  memberId        String
+  member          Member        @relation(fields: [memberId], references: [id])
+  period          String
+  receiptNo       String
+  amount          Decimal       @db.Decimal(14, 2)
+  paidOn          DateTime
+  note            String        @default("")
+  reason          String
+  idempotencyKey  String?
+  status          PaymentStatus @default(RECORDED)
+  createdById     String
+  createdAt       DateTime      @default(now())
+  allocations     PaymentAllocation[]
+  notifications   Notification[]
+
+  @@unique([societyId, receiptNo])
+  @@unique([societyId, idempotencyKey])
+  @@index([societyId, memberId])
+}
+
+model PaymentAllocation {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id])
+  component String
+  amount    Decimal @db.Decimal(14, 2)
+}
+
+model InterestDistribution {
+  id                 String             @id @default(cuid())
+  societyId          String
+  society            Society            @relation(fields: [societyId], references: [id])
+  code               String
+  period             String
+  totalAvailable     Decimal            @db.Decimal(14, 2)
+  eligibleCount      Int
+  perMemberAmount    Decimal            @db.Decimal(14, 2)
+  totalDistributed   Decimal            @db.Decimal(14, 2)
+  interestPortion    Decimal            @default(0) @db.Decimal(14, 2)
+  penaltyPortion     Decimal            @default(0) @db.Decimal(14, 2)
+  remaining          Decimal            @db.Decimal(14, 2)
+  roundingMode       String
+  status             DistributionStatus
+  reason             String
+  createdById        String
+  createdAt          DateTime           @default(now())
+  confirmedAt        DateTime?
+  entries            InterestDistributionEntry[]
+
+  @@unique([societyId, code])
+  @@index([societyId, period])
+}
+
+model InterestDistributionEntry {
+  id               String               @id @default(cuid())
+  distributionId   String
+  distribution     InterestDistribution @relation(fields: [distributionId], references: [id])
+  memberId         String
+  member           Member               @relation(fields: [memberId], references: [id])
+  amount           Decimal              @db.Decimal(14, 2)
+  status           String
+  payoutMethod     String               @default("SHARES")
+
+  @@index([memberId])
+}
+
+model LedgerEntry {
+  id          String     @id @default(cuid())
+  societyId   String
+  society     Society    @relation(fields: [societyId], references: [id])
+  memberId    String?
+  date        DateTime
+  period      String
+  type        LedgerType
+  debit       Decimal    @default(0) @db.Decimal(14, 2)
+  credit      Decimal    @default(0) @db.Decimal(14, 2)
+  amount      Decimal    @db.Decimal(14, 2)
+  cashEffect  CashEffect
+  reference   String
+  reason      String
+  createdById String
+  createdAt   DateTime   @default(now())
+
+  @@index([societyId, date])
+  @@index([societyId, type])
+}
+
+model AccountingMonth {
+  id            String      @id @default(cuid())
+  societyId     String
+  society       Society     @relation(fields: [societyId], references: [id])
+  period        String
+  status        MonthStatus
+  statementDate DateTime
+  openedAt      DateTime    @default(now())
+  closedAt      DateTime?
+  closedById    String?
+  summary       Json?
+  registerNote  String      @default("")
+
+  @@unique([societyId, period])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  societyId String
+  society   Society   @relation(fields: [societyId], references: [id])
+  userId    String?
+  memberId  String?
+  paymentId String?
+  payment   Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  type      String
+  title     String
+  body      String
+  channel   String    @default("IN_APP")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  reads     NotificationRead[]
+
+  @@index([societyId, userId])
+  @@index([paymentId])
+}
+
+model NotificationRead {
+  notificationId String
+  userId         String
+  readAt         DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, userId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  societyId  String
+  society    Society  @relation(fields: [societyId], references: [id])
+  actorId    String?
+  actorName  String
+  action     String
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  reason     String
+  createdAt  DateTime @default(now())
+
+  @@index([societyId, createdAt])
+}

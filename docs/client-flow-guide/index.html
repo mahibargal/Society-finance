@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Society Finance — Step-by-step flow (with screenshots)</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+  </script>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --card: #fff;
+      --ink: #1a2e1a;
+      --muted: #5c6b5c;
+      --moss: #2d5a3d;
+      --line: #d8dfd4;
+      --accent: #2d5a3d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    nav {
+      background: var(--card);
+      border-right: 1px solid var(--line);
+      padding: 1.25rem 1rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    nav h1 { font-size: 1.05rem; margin: 0 0 0.25rem; color: var(--moss); }
+    nav p { font-size: 0.8rem; color: var(--muted); margin: 0 0 1rem; }
+    nav a {
+      display: block;
+      padding: 0.45rem 0.6rem;
+      margin-bottom: 2px;
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--ink);
+      font-size: 0.85rem;
+    }
+    nav a:hover { background: #eef3eb; }
+    nav a.active { background: var(--moss); color: #fff; font-weight: 600; }
+    nav .phase { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 1rem 0 0.35rem; }
+    main { padding: 2rem 2.5rem 4rem; max-width: 960px; }
+    .hero {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 2rem;
+    }
+    .hero h2 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+    .diagram {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 1rem;
+      margin: 1.5rem 0 2rem;
+      overflow-x: auto;
+    }
+    section.step {
+      scroll-margin-top: 1rem;
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--line);
+    }
+    section.step:last-of-type { border-bottom: none; }
+    .step-head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .step-num {
+      background: var(--moss);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+    }
+    .step-head h3 { margin: 0; font-size: 1.25rem; }
+    .role {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--moss);
+      border: 1px solid var(--line);
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+    }
+    .shot {
+      margin: 1rem 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .shot figcaption {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+    ul.actions { margin: 0.5rem 0; padding-left: 1.25rem; }
+    ul.actions li { margin-bottom: 0.35rem; }
+    .nav-buttons {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+    .nav-buttons button {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--moss);
+    }
+    .nav-buttons button:hover { background: #eef3eb; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: relative; height: auto; max-height: 40vh; }
+      main { padding: 1.25rem; }
+    }
+    @media print {
+      nav, .nav-buttons { display: none; }
+      main { max-width: none; padding: 0; }
+      section.step { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav id="sidebar"></nav>
+    <main>
+      <div class="hero">
+        <h2>Society Finance — Visual walkthrough</h2>
+        <p>
+          Step-by-step guide for showing clients how the app works: sign-in, monthly office cycle,
+          reports, and member self-service. Screenshots are from your live demo data.
+        </p>
+        <p style="font-size:0.85rem;color:var(--muted);margin:0;">
+          Open this file in Chrome or Edge: <code>docs/client-flow-guide/index.html</code>
+          · Refresh screenshots: <code>node docs/scripts/capture-flow-screenshots.mjs</code>
+        </p>
+      </div>
+
+      <h2 style="font-size:1.1rem;margin-bottom:0.5rem;">Overall monthly cycle</h2>
+      <div class="diagram mermaid">
+flowchart TB
+  subgraph setup [One-time setup]
+    P[Main admin creates society]
+    I[Import register OR add members]
+  end
+  subgraph month [Every month]
+    O[Open month active]
+    B[Books: shares + loan interest]
+    C[Collect each member]
+    D[Distribute pool optional]
+    X[Preview close]
+    Z[Confirm close → next month opens]
+  end
+  P --> I --> O
+  O --> B --> C --> D --> X --> Z --> O
+      </div>
+
+      <h2 style="font-size:1.1rem;margin-bottom:0.5rem;">Role journeys</h2>
+      <div class="diagram mermaid">
+flowchart LR
+  MA[Main admin /platform] --> OW[Owner & Admin /app]
+  OW --> PAY[Collect /app/pay]
+  OW --> INT[Interest /app/interest]
+  OW --> CLS[Close /app/close]
+  OW --> REP[Reports /app/reports]
+  MEM[Member /me] --> MREP[Read-only reports]
+      </div>
+
+      <div id="steps"></div>
+    </main>
+  </div>
+
+  <script>
+    const STEPS = [
+      {
+        id: "01-login",
+        phase: "Start",
+        role: "Everyone",
+        title: "Sign in",
+        path: "/",
+        bullets: [
+          "Use the username and password from your admin (or demo shortcuts on the login page).",
+          "If one password matches several societies, pick the correct society.",
+          "Session stays signed in securely in the browser (httpOnly cookie).",
+        ],
+      },
+      {
+        id: "02-staff-home",
+        phase: "Staff",
+        role: "Owner / Admin",
+        title: "Dashboard — open month & society totals",
+        path: "/app",
+        bullets: [
+          "Shows the current open accounting month.",
+          "Member capital, loans outstanding, pool balances, and month collected breakdown.",
+          "Use quick links to collect, close month, or open reports.",
+        ],
+      },
+      {
+        id: "03-members",
+        phase: "Staff",
+        role: "Owner / Admin",
+        title: "Member register",
+        path: "/app/members",
+        bullets: [
+          "Active and inactive members in separate sections.",
+          "Each card shows share balance, loan, and current due.",
+          "Tap a member to open profile, history, deactivate, or WhatsApp drafts.",
+        ],
+      },
+      {
+        id: "04-member-detail",
+        phase: "Staff",
+        role: "Owner / Admin",
+        title: "Member profile & month-wise history",
+        path: "/app/members/:id",
+        bullets: [
+          "Month-by-month table: shares, distributed int+pen to shares, loan, installment parts, received, still due.",
+          "Payments, loans, and interest history for that member.",
+          "Deactivate only when no loan and no receipt in the open month (rules enforced by the app).",
+        ],
+      },
+      {
+        id: "05-collect",
+        phase: "Monthly cycle",
+        role: "Owner / Admin",
+        title: "Collect payment",
+        path: "/app/pay",
+        bullets: [
+          "Select member → enter amount → preview allocation (share, interest, principal, penalty order).",
+          "Save receipt; download PDF from payments list.",
+          "Every active member needs a receipt this month before interest distribution (₹0 allowed if nothing due).",
+        ],
+      },
+      {
+        id: "06-payments",
+        phase: "Monthly cycle",
+        role: "Owner / Admin",
+        title: "Payment receipts",
+        path: "/app/payments",
+        bullets: [
+          "All receipts for the society; open-month receipts can be voided if entered by mistake.",
+          "Cannot void if interest already went to a share distribution.",
+        ],
+      },
+      {
+        id: "07-loans",
+        phase: "Staff",
+        role: "Owner / Admin",
+        title: "Loans",
+        path: "/app/loans",
+        bullets: [
+          "Disburse new loans in the open month only.",
+          "Track outstanding principal and scheduled recovery on the month sheet.",
+        ],
+      },
+      {
+        id: "08-interest",
+        phase: "Monthly cycle",
+        role: "Owner / Admin",
+        title: "Interest & penalty pool — distribute",
+        path: "/app/interest",
+        bullets: [
+          "Only collected interest and penalties are in the pool.",
+          "Preview equal split among active members → pay as cash or credit to shares.",
+          "Link goes to Collect when members still need receipts.",
+        ],
+      },
+      {
+        id: "09-close-month",
+        phase: "Monthly cycle",
+        role: "Owner / Admin",
+        title: "Close the month",
+        path: "/app/close",
+        bullets: [
+          "Preview: who paid, carry-forward dues, society balance checks.",
+          "Confirm close freezes this month and automatically opens the next month with new statements.",
+        ],
+      },
+      {
+        id: "10-reports",
+        phase: "Reports",
+        role: "Owner / Admin",
+        title: "Reports hub",
+        path: "/app/reports",
+        bullets: [
+          "Choose report type and month; view on screen or export PDF / Excel.",
+          "Includes loans, interest, penalties, monthly closing, and month books.",
+        ],
+      },
+      {
+        id: "11-month-sheet",
+        phase: "Reports",
+        role: "Owner / Admin",
+        title: "Month sheet (dues to collect)",
+        path: "/app/month-sheet",
+        bullets: [
+          "Per-member dues: share, interest, principal, penalty, totals.",
+          "Includes column for pool interest+penalty credited to shares when distributed to shares.",
+        ],
+      },
+      {
+        id: "12-settings",
+        phase: "Staff",
+        role: "Owner / Admin",
+        title: "Society settings",
+        path: "/app/settings",
+        bullets: [
+          "Interest rate, default share, society name/logo (owner), allocation order display.",
+          "Backup export for owner.",
+        ],
+      },
+      {
+        id: "13-platform",
+        phase: "Setup",
+        role: "Main admin",
+        title: "Platform — create societies & admins",
+        path: "/platform",
+        bullets: [
+          "Main admin only: list societies, create owner/admin logins, reset passwords.",
+        ],
+      },
+      {
+        id: "14-member-home",
+        phase: "Member",
+        role: "Member",
+        title: "My account home",
+        path: "/me",
+        bullets: [
+          "Current due, share and loan snapshot, link to payments and reports.",
+          "Cannot see other members’ data.",
+        ],
+      },
+      {
+        id: "15-member-reports",
+        phase: "Member",
+        role: "Member",
+        title: "Member reports (read-only)",
+        path: "/me/reports",
+        bullets: [
+          "Same society reports as staff, without edit actions.",
+          "Personal month report export from My month report menu.",
+        ],
+      },
+    ];
+
+    const sidebar = document.getElementById("sidebar");
+    const stepsEl = document.getElementById("steps");
+    let phases = [...new Set(STEPS.map((s) => s.phase))];
+
+    sidebar.innerHTML = `<h1>Society Finance</h1><p>Click a step</p>`;
+    phases.forEach((phase) => {
+      sidebar.insertAdjacentHTML("beforeend", `<div class="phase">${phase}</div>`);
+      STEPS.filter((s) => s.phase === phase).forEach((s, i) => {
+        const idx = STEPS.indexOf(s) + 1;
+        sidebar.insertAdjacentHTML("beforeend", `<a href="#${s.id}" data-id="${s.id}">${idx}. ${s.title}</a>`);
+      });
+    });
+
+    STEPS.forEach((s, i) => {
+      const n = i + 1;
+      stepsEl.insertAdjacentHTML(
+        "beforeend",
+        `<section class="step" id="${s.id}">
+          <div class="step-head">
+            <span class="step-num">Step ${n}</span>
+            <h3>${s.title}</h3>
+            <span class="role">${s.role}</span>
+          </div>
+          <p><strong>Screen:</strong> <code>${s.path}</code></p>
+          <ul class="actions">${s.bullets.map((b) => `<li>${b}</li>`).join("")}</ul>
+          <figure class="shot">
+            <img src="screenshots/${s.id}.png" alt="${s.title}" loading="lazy" />
+            <figcaption>Screenshot: ${s.title}</figcaption>
+          </figure>
+          <div class="nav-buttons">
+            ${i > 0 ? `<button type="button" data-goto="${STEPS[i - 1].id}">← Previous</button>` : ""}
+            ${i < STEPS.length - 1 ? `<button type="button" data-goto="${STEPS[i + 1].id}">Next →</button>` : ""}
+          </div>
+        </section>`,
+      );
+    });
+
+    function setActive(id) {
+      sidebar.querySelectorAll("a").forEach((a) => a.classList.toggle("active", a.dataset.id === id));
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible) setActive(visible.target.id);
+      },
+      { rootMargin: "-20% 0px -55% 0px", threshold: [0, 0.25, 0.5] },
+    );
+    STEPS.forEach((s) => observer.observe(document.getElementById(s.id)));
+
+    document.body.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-goto]");
+      if (btn) {
+        document.getElementById(btn.dataset.goto)?.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+  </script>
+</body>
+</html>

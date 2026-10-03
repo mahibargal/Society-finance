@@ -1,0 +1,29 @@
+{
+  "name": "society-finance",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c green,blue \"npm run dev -w server\" \"npm run dev -w client\"",
+    "test": "npm run test -w server",
+    "build": "npm run generate -w server && npm run build -w client",
+    "start": "npm run start -w server",
+    "start:dev": "npm run start:dev -w server",
+    "env:init": "node -e \"const fs=require('fs');const p='server/.env.development';if(!fs.existsSync(p))fs.copyFileSync('server/.env.development.example',p);console.log('Created',p);\"",
+    "wipe:kranti": "node scripts/run-local-dev.mjs wipe-kranti-society.ts",
+    "wipe:data": "node scripts/run-local-dev.mjs wipe-society-data.ts",
+    "dev:check-patil": "node scripts/run-local-dev.mjs check-patil.ts",
+    "heal:kranti": "node scripts/run-local-dev.mjs heal-kranti-pool.ts",
+    "local-dev:init": "node -e \"const fs=require('fs');const path=require('path');const d=path.join('local-dev');if(fs.existsSync(d))console.log('local-dev/ already exists');else{fs.cpSync('local-dev.example',d,{recursive:true});console.log('Created local-dev/ — run npm run wipe:kranti etc.');}\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "playwright": "^1.63.0",
+    "tsx": "^4.20.5"
+  }
+}

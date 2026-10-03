@@ -1,0 +1,29 @@
+# Render Blueprint — optional one-click setup. Adjust service name and region as needed.
+services:
+  - type: web
+    name: society-finance
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: SKIP_DEMO_SEED
+        value: "1"
+      - key: SKIP_PRISMA_GENERATE
+        value: "1"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: society-finance-db
+          property: connectionString
+      - key: CLIENT_ORIGIN
+        sync: false
+
+databases:
+  - name: society-finance-db
+    plan: free

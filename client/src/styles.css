@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "@fontsource/outfit/400.css";
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+
+@theme {
+  --color-paper: #f8fafc;
+  --color-paper-deep: #f1f5f9;
+  --color-card: #ffffff;
+  --color-ink: #0f172a;
+  --color-muted: #475569;
+  --color-line: #e2e8f0;
+  --color-moss: #0f766e;
+  --color-pine: #0f766e;
+  --color-gold: #0ea5e9;
+  --color-clay: #dc2626;
+  --font-sans: "Outfit", "Nirmala UI", "Mangal", sans-serif;
+  --font-serif: "Outfit", "Nirmala UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+.tab-bar {
+  /* iOS keeps the bar clear of the home indicator; Android of the gesture pill. */
+  pointer-events: none;
+}
+
+.tab-bar > * {
+  pointer-events: auto;
+}
+
+.num {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.03em;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.skeleton {
+  background: #e2e8f0;
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-bottom {
+  padding-bottom: calc(6.2rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .safe-bottom {
+    padding-bottom: 2.5rem;
+  }
+}
+
+@media print {
+  .no-print,
+  header,
+  aside,
+  nav {
+    display: none !important;
+  }
+  .report-sheet {
+    display: block !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .report-sheet table,
+  .report-sheet th,
+  .report-sheet td {
+    width: auto !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+  }
+  .report-cards {
+    display: none !important;
+  }
+  body,
+  .safe-bottom {
+    background: white;
+    padding: 0;
+  }
+}
