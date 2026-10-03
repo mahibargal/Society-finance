@@ -15,7 +15,7 @@ One **Web Service** serves the API and the built client (`client/dist`). A **Pos
 |--------|--------|
 | **Root directory** | *(repo root)* |
 | **Runtime** | Node |
-| **Build command** | `npm install && npm run build` |
+| **Build command** | `npm install --include=dev && npm run build` |
 | **Start command** | `npm run start` |
 | **Instance type** | Free or paid |
 

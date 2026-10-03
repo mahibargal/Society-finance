@@ -41,7 +41,7 @@ gh repo create YOUR_REPO --private --source=. --remote=origin --push
 1. [Render](https://render.com) → **New → Blueprint** and point at `render.yaml`, **or** **New → Web Service** and connect the GitHub repo manually.
 2. Add **PostgreSQL**; set `DATABASE_URL` on the web service (internal URL).
 3. Set env vars from `server/.env.production.example` (see [DEPLOY-RENDER.md](./DEPLOY-RENDER.md)).
-4. **Build:** `npm install && npm run build`
+4. **Build:** `npm install --include=dev && npm run build` (needed so Vite/Prisma CLI are available; `NODE_ENV=production` on Render skips devDependencies otherwise)
 5. **Start:** `npm run start`
 6. **Health check path:** `/api/health`
 

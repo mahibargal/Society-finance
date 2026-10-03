@@ -62,6 +62,8 @@ npm run build
 npm run start
 ```
 
+On Render, set **Build command** to `npm install --include=dev && npm run build` (not plain `npm install && npm run build`).
+
 The server serves `client/dist` and `/api`. Full steps: **[docs/DEPLOY-RENDER.md](docs/DEPLOY-RENDER.md)**, **[docs/GITHUB-AND-RENDER.md](docs/GITHUB-AND-RENDER.md)**, and optional **[render.yaml](render.yaml)**.
 
 ## Tests
