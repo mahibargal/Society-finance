@@ -326,6 +326,16 @@ api.post(
 
 api.get("/dashboard", requireAuth, requireStaff, asyncRoute(async (req, res) => res.json(await adminDashboard(authOf(req)))));
 
+api.get("/open-period", requireAuth, requireStaff, asyncRoute(async (req, res) => {
+  const auth = authOf(req);
+  const open = await prisma.accountingMonth.findFirst({
+    where: { societyId: auth.societyId, status: "OPEN" },
+    orderBy: { period: "desc" },
+    select: { period: true },
+  });
+  res.json({ period: open?.period ?? calendarPeriod() });
+}));
+
 api.get("/members", requireAuth, asyncRoute(async (req, res) => res.json(await listMembers(authOf(req)))));
 
 api.get(

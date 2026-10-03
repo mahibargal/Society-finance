@@ -1,10 +1,10 @@
 import { Bell, Building2, CalendarCheck, ChevronLeft, ClipboardList, FileText, Home, Landmark, LogOut, Plus, Receipt, Settings, Table2, Users, Wallet, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useBooksVersion } from "../lib/books-refresh";
 import { showAddMember } from "../lib/register-setup";
+import { fetchMemberCards, fetchNotifications, fetchRegisterPolicy } from "../lib/staff-data";
 import { AlertsPanel } from "./alerts-panel";
 
 type NavItem = { to: string; label: string; icon: LucideIcon; hint?: string; end?: boolean };
@@ -250,19 +250,19 @@ export function Shell({ children, admin = false, platform = false }: { children:
       setMemberCount(null);
       return;
     }
-    api<{ id: string }[]>("/api/members")
+    fetchMemberCards(booksVersion)
       .then((rows) => setMemberCount(rows.length))
       .catch(() => setMemberCount(0));
-    api<{ canAddMembers: boolean }>("/api/members/register-policy")
+    fetchRegisterPolicy(booksVersion)
       .then((policy) => setRegisterOpen(policy.canAddMembers))
       .catch(() => setRegisterOpen(false));
   }, [admin, booksVersion]);
   useEffect(() => {
     if (!showAlerts) return;
-    api<{ readAt: string | null }[]>("/api/notifications")
+    fetchNotifications(booksVersion)
       .then((rows) => setUnread(rows.filter((row) => !row.readAt).length))
       .catch(() => setUnread(0));
-  }, [showAlerts, location.pathname, booksVersion]);
+  }, [showAlerts, booksVersion]);
 
   useEffect(() => {
     setProfile(false);

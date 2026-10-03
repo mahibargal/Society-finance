@@ -2078,7 +2078,17 @@ async function assertMemberMayDeactivate(auth: AuthUser, memberId: string) {
   if (message) throw new HttpError(409, message);
 }
 
+export const MEMBER_ACTIVATION_DISABLED_MESSAGE =
+  "Member activation is not allowed in this release. Re-activating members will be available in the next phase as a premium feature.";
+
+function memberActivationAllowed() {
+  return process.env.ALLOW_MEMBER_ACTIVATION === "1";
+}
+
 export async function activateMember(auth: AuthUser, memberId: string, reason: string) {
+  if (!memberActivationAllowed()) {
+    throw new HttpError(403, MEMBER_ACTIVATION_DISABLED_MESSAGE);
+  }
   return setMemberActive(auth, memberId, true, reason);
 }
 
@@ -2123,6 +2133,14 @@ export async function memberDistributionWarning(
     const member = await prisma.member.findFirst({ where: { id: input.memberId, societyId: auth.societyId } });
     if (!member || member.status !== "INACTIVE") {
       return { needsConfirmation: false, blocked: false, message: "", poolAvailable: pool.combinedAvailable };
+    }
+    if (!memberActivationAllowed()) {
+      return {
+        needsConfirmation: false,
+        blocked: true,
+        message: MEMBER_ACTIVATION_DISABLED_MESSAGE,
+        poolAvailable: pool.combinedAvailable,
+      };
     }
     if (!money(pool.combinedAvailable).greaterThan(0)) {
       return { needsConfirmation: false, blocked: false, message: "", poolAvailable: pool.combinedAvailable };

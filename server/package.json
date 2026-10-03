@@ -10,6 +10,7 @@
     "seed": "tsx src/seed.ts",
     "bootstrap:main": "cross-env NODE_ENV=development APP_ENV=development tsx src/bootstrap-main-admin.ts",
     "bootstrap:office": "cross-env NODE_ENV=development APP_ENV=development tsx src/bootstrap-office-admin.ts",
+    "wipe:kranti": "cross-env NODE_ENV=development APP_ENV=development tsx src/scripts/wipe-kranti-society.ts",
     "db:push": "prisma db push",
     "generate": "prisma generate"
   },

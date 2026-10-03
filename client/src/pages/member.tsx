@@ -4,10 +4,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { FeatureLink, SectionTitle } from "../components/home-links";
 import { Shell } from "../components/shell";
 import { MemberHistoryTable } from "../components/member-history";
+import { ExportDownloadButtons } from "../components/export-download-buttons";
 import { Bone, Button, Card, Empty, ListSkeleton, Money, PageSkeleton, PayoutBadge, Sheet, Stat } from "../components/ui";
 import { api } from "../lib/api";
 import { useBooksVersion } from "../lib/books-refresh";
 import { downloadFromResponse } from "../lib/download-blob";
+import { useFormatDownload } from "../lib/use-format-download";
 import { downloadPaymentReceipt } from "../lib/payment-receipt";
 import { formatINR, monthLabel } from "../lib/format";
 
@@ -89,6 +91,7 @@ export function MemberMonthReport() {
   const booksVersion = useBooksVersion();
   const [data, setData] = useState<any>(null);
   const [reportError, setReportError] = useState("");
+  const { downloading, run: runDownload } = useFormatDownload();
   useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
   if (!data) return <Shell><PageSkeleton cards={1} /></Shell>;
   return (
@@ -97,15 +100,16 @@ export function MemberMonthReport() {
         <h1 className="text-3xl font-semibold">My month report</h1>
         <p className="mt-1 text-sm text-muted">{data.member.name} · {data.society.name} · every month, oldest first</p>
       </div>
-      <div className="no-print flex flex-wrap gap-2">
-        <button type="button" className="rounded-2xl bg-pine px-4 py-3 text-sm font-semibold text-white" onClick={() => {
-          setReportError("");
-          downloadMyReport("xlsx").catch((err) => setReportError(err instanceof Error ? err.message : "Download failed"));
-        }}>Excel</button>
-        <button type="button" className="rounded-2xl border border-line px-4 py-3 text-sm font-semibold" onClick={() => {
-          setReportError("");
-          downloadMyReport("pdf").catch((err) => setReportError(err instanceof Error ? err.message : "Download failed"));
-        }}>PDF</button>
+      <div className="no-print flex flex-wrap items-center gap-2">
+        <ExportDownloadButtons
+          downloading={downloading}
+          onDownload={(format) => {
+            void runDownload(format, async () => {
+              setReportError("");
+              await downloadMyReport(format);
+            }).catch((err) => setReportError(err instanceof Error ? err.message : "Download failed"));
+          }}
+        />
         <Button tone="ghost" onClick={() => window.print()}>Print</Button>
       </div>
       {reportError && <p className="no-print text-sm text-clay">{reportError}</p>}

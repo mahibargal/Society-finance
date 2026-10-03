@@ -1,6 +1,11 @@
-function mobileLike() {
+function isIos() {
   if (typeof navigator === "undefined") return false;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function isAndroid() {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
 }
 
 function filenameFromDisposition(header: string | null, fallback: string) {
@@ -8,30 +13,48 @@ function filenameFromDisposition(header: string | null, fallback: string) {
   return named?.[1] ?? fallback;
 }
 
-/** Download or open a blob without navigating the app away (common mobile PDF blank-screen bug). */
+/** Android often saves twice if window.open(blob) and <a download> both run — guard identical saves. */
+let lastSaveKey = "";
+let lastSaveAt = 0;
+
+function shouldSkipDuplicateSave(filename: string) {
+  const key = filename;
+  const now = Date.now();
+  if (key === lastSaveKey && now - lastSaveAt < 2500) return true;
+  lastSaveKey = key;
+  lastSaveAt = now;
+  return false;
+}
+
+function triggerAnchorDownload(url: string, filename: string, targetBlank = false) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.style.display = "none";
+  if (targetBlank) {
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+  } else {
+    link.download = filename;
+  }
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/** Download or open a blob without navigating the app away (iOS PDF blank-screen workaround). */
 export function saveBlob(blob: Blob, filename: string) {
+  if (shouldSkipDuplicateSave(filename)) return;
+
   const url = URL.createObjectURL(blob);
   const isPdf = /\.pdf$/i.test(filename) || blob.type.includes("pdf");
-  const openPdfInNewTab = isPdf && mobileLike();
+  /** iOS: new tab avoids blank in-app PDF. Android: <a download> once — window.open often downloads twice. */
+  const openPdfInNewTab = isPdf && isIos() && !isAndroid();
 
   if (openPdfInNewTab) {
     const opened = window.open(url, "_blank", "noopener,noreferrer");
-    if (!opened) {
-      const link = document.createElement("a");
-      link.href = url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+    if (!opened) triggerAnchorDownload(url, filename, true);
   } else {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    triggerAnchorDownload(url, filename, false);
   }
 
   window.setTimeout(() => URL.revokeObjectURL(url), 120_000);

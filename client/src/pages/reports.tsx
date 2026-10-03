@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { MonthCalendar } from "../components/month-calendar";
 import { Shell } from "../components/shell";
+import { ExportDownloadButtons } from "../components/export-download-buttons";
 import { Card, Empty, Money, TableSkeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useBooksVersion } from "../lib/books-refresh";
 import { formatINR } from "../lib/format";
 import { downloadReport } from "../lib/report-export";
+import { useFormatDownload } from "../lib/use-format-download";
 
 const reports = [
   ["month-sheet", "Month sheet — to collect"],
@@ -190,6 +192,7 @@ function ReportsPage({ admin }: { admin: boolean }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [reportError, setReportError] = useState("");
   const [busy, setBusy] = useState(true);
+  const { downloading, run: runDownload } = useFormatDownload();
   const { session } = useAuth();
   /** One loader avoids two requests racing: the due sheet must not overwrite the collected sheet after a payment. */
   useEffect(() => {
@@ -232,9 +235,11 @@ function ReportsPage({ admin }: { admin: boolean }) {
     };
   }, [report, period, booksVersion]);
   const download = (format: "pdf" | "xlsx") => {
-    setReportError("");
     const filePeriod = reportUsesMonthFilter(report) ? period || sheet?.period : undefined;
-    downloadReport(report, format, filePeriod).catch((err) => setReportError(err.message));
+    void runDownload(format, async () => {
+      setReportError("");
+      await downloadReport(report, format, filePeriod);
+    }).catch((err) => setReportError(err instanceof Error ? err.message : "Download failed"));
   };
   return (
     <Shell admin={admin}>
@@ -261,10 +266,9 @@ function ReportsPage({ admin }: { admin: boolean }) {
               )}
             </div>
           )}
-          <div className="no-print mt-3 flex flex-wrap gap-2">
-            <button type="button" className="rounded-2xl bg-pine px-4 py-3 text-sm font-semibold text-white" onClick={() => download("xlsx")}>Excel</button>
-            <button type="button" className="rounded-2xl border border-line px-4 py-3 text-sm font-semibold" onClick={() => download("pdf")}>PDF</button>
-            <button type="button" className="rounded-2xl border border-line px-4 py-3 text-sm font-semibold" onClick={() => {
+          <div className="no-print mt-3 flex flex-wrap items-center gap-2">
+            <ExportDownloadButtons downloading={downloading} onDownload={download} />
+            <button type="button" className="min-h-11 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold" onClick={() => {
               if (isMonthSheetReport(report) && sheet) {
                 const title = reports.find(([id]) => id === report)?.[1] ?? sheet.month;
                 printReport(

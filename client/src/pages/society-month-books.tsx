@@ -9,11 +9,13 @@ import {
   MonthlyCollectionTable,
   type MonthSheet,
 } from "../components/society-month-tables";
+import { ExportDownloadButtons } from "../components/export-download-buttons";
 import { Button, Card, TableSkeleton } from "../components/ui";
 import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useBooksVersion } from "../lib/books-refresh";
 import { downloadReport, printReport } from "../lib/report-export";
+import { useFormatDownload } from "../lib/use-format-download";
 
 type BookKind = "month-sheet" | "month-collected" | "monthly";
 
@@ -48,6 +50,7 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
   const [openPeriod, setOpenPeriod] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const { downloading, run: runDownload } = useFormatDownload();
 
   useEffect(() => {
     let cancelled = false;
@@ -100,31 +103,18 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
         {sheet && sheet.periods.length > 0 && kind !== "monthly" && (
           <MonthCalendar value={period || sheet.period} periods={sheet.periods} onChange={setPeriod} />
         )}
-        <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="rounded-2xl bg-pine px-4 py-3 text-sm font-semibold text-white shadow-sm"
-          onClick={() => {
-            setError("");
-            downloadReport(meta.reportId, "xlsx", filePeriod).catch((err) =>
+        <div className="flex flex-wrap items-center gap-2">
+        <ExportDownloadButtons
+          downloading={downloading}
+          onDownload={(format) => {
+            void runDownload(format, async () => {
+              setError("");
+              await downloadReport(meta.reportId, format, filePeriod);
+            }).catch((err) =>
               setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Download failed"),
             );
           }}
-        >
-          Excel
-        </button>
-        <button
-          type="button"
-          className="rounded-2xl border border-line px-4 py-3 text-sm font-semibold"
-          onClick={() => {
-            setError("");
-            downloadReport(meta.reportId, "pdf", filePeriod).catch((err) =>
-              setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Download failed"),
-            );
-          }}
-        >
-          PDF
-        </button>
+        />
         <Button
           tone="ghost"
           onClick={() => {

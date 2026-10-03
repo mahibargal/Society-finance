@@ -18,6 +18,7 @@ import { confirmMemberDistributionChange } from "../lib/member-distribution-warn
 import { mobileError, mobileInput, normalizeMobile } from "../lib/phone";
 import { clearImportDraft, loadImportDraft, saveImportDraft } from "../lib/import-draft";
 import { addMembersBlockedMessage, allowManualMembers, clearManualMembersChoice, manualMembersAllowed, registerNeedsSetup, showAddMember } from "../lib/register-setup";
+import { fetchMemberCards, fetchOpenPeriod, fetchRegisterPolicy } from "../lib/staff-data";
 
 type Dashboard = {
   society: { name: string };
@@ -296,14 +297,14 @@ export function AdminMembers() {
   const [error, setError] = useState("");
   async function load() {
     try {
-      setMembers(await api<MemberCard[]>("/api/members"));
+      setMembers(await fetchMemberCards(booksVersion));
     } catch {
       setMembers([]);
     }
   }
   useEffect(() => {
     void load();
-    api<{ canAddMembers: boolean; importedRegister?: boolean }>("/api/members/register-policy")
+    fetchRegisterPolicy(booksVersion)
       .then((policy) => {
         setRegisterOpen(policy.canAddMembers);
         setImportedRegister(policy.importedRegister === true);
@@ -533,6 +534,9 @@ export function AdminMember() {
   );
 }
 
+const MEMBER_ACTIVATION_DISABLED_MESSAGE =
+  "Member activation is not allowed in this release. Re-activating members will be available in the next phase as a premium feature.";
+
 function MemberStatus({
   member,
   booksVersion,
@@ -567,30 +571,36 @@ function MemberStatus({
       <p className="mt-1 text-sm text-muted">
         {active
           ? "This member can pay and sign in. Deactivate only after their loan is cleared and they have no receipt in the open month — share capital and interest wallet are paid out in cash. Month sheets show 0 share/loan for inactive members after exit."
-          : "This member cannot pay or sign in. Activate to start fresh in the open month (0 shares, no month-wise history on their page). Society reports for closed months stay as saved."}
+          : "This member is inactive — they cannot pay or sign in. Society reports for closed months stay as saved."}
       </p>
+      {!active && (
+        <p className="mt-2 rounded-2xl border border-line bg-paper-deep px-3 py-2 text-sm text-muted">
+          {MEMBER_ACTIVATION_DISABLED_MESSAGE}
+        </p>
+      )}
       {deactivateBlocked && (
         <p className="mt-2 text-sm text-clay">{deactivateBlocked}</p>
       )}
       <form className="mt-3 grid gap-3" onSubmit={async (event) => {
         event.preventDefault();
+        if (!active) return;
         setError("");
         setBusy(true);
         try {
-          const ok = await confirmMemberDistributionChange(active ? "deactivate" : "activate", member.id);
+          const ok = await confirmMemberDistributionChange("deactivate", member.id);
           if (!ok) return;
-          await api(`/api/members/${member.id}/${active ? "deactivate" : "activate"}`, { method: "POST", body: JSON.stringify({ reason }) });
+          await api(`/api/members/${member.id}/deactivate`, { method: "POST", body: JSON.stringify({ reason }) });
           bumpBooks();
           onSaved();
         } catch (err) { setError(err instanceof Error ? err.message : "Could not update the member"); }
         finally { setBusy(false); }
       }}>
-        <Field label="Reason" value={reason} onChange={setReason} />
+        {active && <Field label="Reason" value={reason} onChange={setReason} />}
         {error && <p className="text-sm text-clay">{error}</p>}
         <Button
-          type="submit"
+          type={active ? "submit" : "button"}
           tone={active ? "danger" : "primary"}
-          disabled={busy || Boolean(deactivateBlocked)}
+          disabled={busy || Boolean(deactivateBlocked) || !active}
         >
           {active ? "Deactivate member" : "Activate member"}
         </Button>
@@ -889,11 +899,11 @@ export function AdminPay() {
   const [registerOpen, setRegisterOpen] = useState(true);
   const [importedRegister, setImportedRegister] = useState(false);
   useEffect(() => {
-    api<MemberCard[]>("/api/members").then(setMembers).catch(() => {
+    fetchMemberCards(booksVersion).then(setMembers).catch(() => {
       setMembers([]);
       setError("Members could not be loaded. Open this page again.");
     });
-    api<{ canAddMembers: boolean; importedRegister?: boolean }>("/api/members/register-policy")
+    fetchRegisterPolicy(booksVersion)
       .then((policy) => {
         setRegisterOpen(policy.canAddMembers);
         setImportedRegister(policy.importedRegister === true);
@@ -940,7 +950,7 @@ export function AdminPay() {
     setNotice("");
   }, [member]);
   const [period, setPeriod] = useState("");
-  useEffect(() => { api<{ period: string }>("/api/dashboard").then((row) => setPeriod(row.period)).catch(() => undefined); }, [booksVersion]);
+  useEffect(() => { fetchOpenPeriod(booksVersion).then((row) => setPeriod(row.period)).catch(() => undefined); }, [booksVersion]);
   return (
     <Shell admin>
       <h1 className="text-3xl font-semibold">{penalty ? "Add penalty" : "Collect payment"}</h1>
@@ -1311,7 +1321,7 @@ export function AdminLoans() {
     try {
       const [loanRows, memberRows, dashboard] = await Promise.all([
         api<any[]>("/api/loans"),
-        api<MemberCard[]>("/api/members"),
+        fetchMemberCards(booksVersion),
         api<{ societyCash: string; societyCashLedger?: string }>("/api/dashboard"),
       ]);
       setLoans(loanRows);
@@ -1535,7 +1545,7 @@ export function AdminInterest() {
     Promise.all([
       api("/api/interest/example").then(setExample),
       api<any[]>("/api/interest/distributions").then(setRuns),
-      api<{ period: string }>("/api/dashboard").then((row) => setPeriod(row.period)),
+      fetchOpenPeriod(booksVersion).then((row) => setPeriod(row.period)),
     ]).finally(() => setReady(true));
   }, [booksVersion]);
   useEffect(() => {
@@ -2255,6 +2265,7 @@ function ImportPanel() {
   const [preview, setPreview] = useState<any>(null);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [sampleDownloading, setSampleDownloading] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
@@ -2272,7 +2283,7 @@ function ImportPanel() {
         )
       : "";
   useEffect(() => {
-    api<MemberCard[]>("/api/members").then((rows) => {
+    fetchMemberCards(booksVersion).then((rows) => {
       setMemberCount(rows.length);
       if (rows.length > 0) clearImportDraft();
     }).catch(() => setMemberCount(0));
@@ -2376,14 +2387,26 @@ function ImportPanel() {
         </p>
       )}
       <div className="mt-4">
-        <button type="button" className="inline-flex min-h-12 items-center rounded-2xl border border-line bg-white px-5 text-base font-semibold" onClick={async () => {
-          try {
-            const response = await fetch("/api/import/sample", { credentials: "include" });
-            await downloadFromResponse(response, "Society_register_sample.xlsx");
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not download the sample");
-          }
-        }}>Download sample Excel</button>
+        <Button
+          tone="ghost"
+          loading={sampleDownloading}
+          loadingLabel="Downloading Excel…"
+          disabled={sampleDownloading}
+          onClick={async () => {
+            setSampleDownloading(true);
+            setError("");
+            try {
+              const response = await fetch("/api/import/sample", { credentials: "include" });
+              await downloadFromResponse(response, "Society_register_sample.xlsx");
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Could not download the sample");
+            } finally {
+              setSampleDownloading(false);
+            }
+          }}
+        >
+          Download sample Excel
+        </Button>
       </div>
       <input className="mt-4 block w-full text-sm disabled:opacity-50" type="file" accept=".xlsx,.xls,.csv" disabled={!period || future || previewLoading} onChange={async (event) => {
         const file = event.target.files?.[0];

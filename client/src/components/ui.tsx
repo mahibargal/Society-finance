@@ -21,6 +21,7 @@ export function Button({
   tone = "primary",
   disabled,
   loading = false,
+  loadingLabel = "Please wait…",
   full = false,
   className = "",
 }: {
@@ -30,6 +31,7 @@ export function Button({
   tone?: "primary" | "ghost" | "danger" | "gold";
   disabled?: boolean;
   loading?: boolean;
+  loadingLabel?: string;
   full?: boolean;
   className?: string;
 }) {
@@ -47,7 +49,7 @@ export function Button({
       aria-busy={loading}
       className={`min-h-12 rounded-2xl px-5 text-base font-semibold transition active:scale-[0.98] disabled:opacity-50 ${full ? "w-full" : ""} ${tones[tone]} ${className}`}
     >
-      {loading ? "Please wait…" : children}
+      {loading ? loadingLabel : children}
     </button>
   );
 }
