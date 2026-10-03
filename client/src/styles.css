@@ -63,7 +63,8 @@ body {
 }
 
 .safe-bottom {
-  padding-bottom: calc(6.2rem + env(safe-area-inset-bottom));
+  /* Fixed tab bar (~4.6rem) + gradient + comfortable scroll past last field on iOS/Android. */
+  padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
 }
 
 @media (min-width: 1024px) {

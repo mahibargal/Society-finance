@@ -59,18 +59,18 @@ export function PlatformHome() {
             <div className="mt-4 grid gap-2">
               {society.admins.map((admin) => (
                 <div key={admin.id} className="rounded-2xl bg-paper px-3 py-3 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
+                  <div className="grid gap-3">
+                    <div className="min-w-0">
                       <div className="font-medium">{admin.name}</div>
                       <div className="text-muted">@{admin.username}</div>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                      <div className={`text-xs font-medium ${admin.isActive ? "text-moss" : "text-clay"}`}>
+                      <div className={`mt-1 text-xs font-medium ${admin.isActive ? "text-moss" : "text-clay"}`}>
                         {admin.role === "OWNER" ? "Lead admin" : "Admin"} · {admin.isActive ? "Active" : "Inactive"}
                       </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        className="min-h-10 rounded-2xl border border-line bg-white px-3 text-xs font-semibold"
+                        className="min-h-10 flex-1 rounded-2xl border border-line bg-white px-3 text-xs font-semibold sm:flex-none"
                         onClick={async () => {
                           const next = !admin.isActive;
                           const reason = window.prompt(next ? "Reason for activating this admin" : "Reason for deactivating this admin");
@@ -87,7 +87,7 @@ export function PlatformHome() {
                       </button>
                       <button
                         type="button"
-                        className="min-h-10 rounded-2xl border border-line bg-white px-3 text-xs font-semibold"
+                        className="min-h-10 flex-1 rounded-2xl border border-line bg-white px-3 text-xs font-semibold sm:flex-none"
                         onClick={() => { setResetId(resetId === admin.id ? "" : admin.id); setResetPassword(""); setResetError(""); setResetSaved(""); }}
                       >
                         {resetId === admin.id ? "Cancel" : "Change password"}

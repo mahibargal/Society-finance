@@ -271,7 +271,7 @@ export function Shell({ children, admin = false, platform = false }: { children:
   useMobileScrollLock(Boolean(profile && session));
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen overflow-x-clip lg:grid lg:grid-cols-[260px_1fr]">
       <aside className="no-print sticky top-0 hidden h-screen lg:block">
         {session && (
           <SocietySidebar
@@ -320,7 +320,7 @@ export function Shell({ children, admin = false, platform = false }: { children:
           </div>
         </header>
         {/* Wide report tables must scroll inside their card, not stretch the page under the fixed tab bar. */}
-        <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5 [&>*]:min-w-0">{children}</main>
+        <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5 max-lg:pb-8 [&>*]:min-w-0">{children}</main>
       </div>
 
       <nav className="tab-bar no-print fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[#eef6f2]/95 to-transparent pt-2 lg:hidden">
