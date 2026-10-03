@@ -35,12 +35,12 @@ export function LoginPage() {
   const [choices, setChoices] = useState<Choice[]>([]);
   const [selectionToken, setSelectionToken] = useState("");
   const [showDemoLogins, setShowDemoLogins] = useState(demoLoginsEnabled);
-  const [mainSetup, setMainSetup] = useState(false);
+  const [needsMainAdmin, setNeedsMainAdmin] = useState(false);
 
   useEffect(() => {
-    api<{ needsMainAdmin: boolean; setupEnabled: boolean }>("/api/auth/setup-main-admin/status")
-      .then((row) => setMainSetup(row.setupEnabled))
-      .catch(() => setMainSetup(false));
+    api<{ needsMainAdmin: boolean }>("/api/auth/setup-main-admin/status")
+      .then((row) => setNeedsMainAdmin(row.needsMainAdmin))
+      .catch(() => setNeedsMainAdmin(false));
   }, []);
 
   useEffect(() => {
@@ -143,11 +143,11 @@ export function LoginPage() {
           <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Your password" />
           {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-clay">{error}</p>}
           <Button type="submit" disabled={busy || !username || !password}>{busy ? "Signing in…" : "Sign in"}</Button>
-          {mainSetup && (
+          {needsMainAdmin && (
             <p className="text-center text-sm text-muted">
-              First time on production?{" "}
+              No main admin yet.{" "}
               <Link to="/setup" className="font-semibold text-moss">
-                Create main admin
+                Open setup (/setup)
               </Link>
             </p>
           )}

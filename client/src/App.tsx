@@ -42,7 +42,7 @@ export function App() {
       <ScrollToTop />
       <Routes>
       <Route path="/" element={loading ? <ScreenSkeleton /> : session ? <Navigate to={homeFor(session.user.role)} replace /> : <LoginPage />} />
-      <Route path="/setup" element={loading ? <ScreenSkeleton /> : session ? <Navigate to={homeFor(session.user.role)} replace /> : <SetupMainAdminPage />} />
+      <Route path="/setup" element={<SetupMainAdminPage />} />
       <Route path="/platform" element={<Gate role="platform"><PlatformHome /></Gate>} />
       <Route path="/app" element={<Gate role="staff"><AdminHome /></Gate>} />
       <Route path="/app/members" element={<Gate role="staff"><AdminMembers /></Gate>} />

@@ -208,7 +208,8 @@ function setupTokenMatches(provided: string) {
 export async function mainAdminSetupStatus() {
   const needsMainAdmin = (await prisma.user.count({ where: { role: "MAIN_ADMIN" } })) === 0;
   const token = (process.env.MAIN_ADMIN_SETUP_TOKEN ?? "").trim();
-  return { needsMainAdmin, setupEnabled: needsMainAdmin && token.length >= 16 };
+  const tokenConfigured = token.length >= 16;
+  return { needsMainAdmin, tokenConfigured, setupEnabled: needsMainAdmin && tokenConfigured };
 }
 
 /** One-time hosted setup — not a public signup; requires MAIN_ADMIN_SETUP_TOKEN. */
