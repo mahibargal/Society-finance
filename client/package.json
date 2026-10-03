@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "icons": "node scripts/icons.mjs",
-    "build": "node scripts/icons.mjs && vite build",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
