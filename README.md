@@ -25,7 +25,7 @@ npm run dev
 - **`npm run start`** uses `NODE_ENV=production` and loads `.env.production` if present; on Render, use the dashboard env vars (they override the file).
 - Fix bugs locally with dev env, then push code — production secrets stay on Render or in your local `.env.production` only.
 
-Open http://127.0.0.1:5173 (API on port 4000).
+Open http://127.0.0.1:5187 (API on port 4087).
 
 ### Demo login shortcuts (optional)
 

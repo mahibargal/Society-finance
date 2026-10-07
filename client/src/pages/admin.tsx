@@ -18,39 +18,15 @@ import { confirmMemberDistributionChange } from "../lib/member-distribution-warn
 import { mobileError, mobileInput, normalizeMobile } from "../lib/phone";
 import { clearImportDraft, loadImportDraft, saveImportDraft } from "../lib/import-draft";
 import { addMembersBlockedMessage, allowManualMembers, clearManualMembersChoice, manualMembersAllowed, registerNeedsSetup, showAddMember } from "../lib/register-setup";
-import { fetchMemberCards, fetchOpenPeriod, fetchRegisterPolicy } from "../lib/staff-data";
+import {
+  fetchMemberCards,
+  fetchOpenPeriod,
+  fetchRegisterPolicy,
+  fetchStaffDashboard,
+  type StaffDashboard,
+} from "../lib/staff-data";
 
-type Dashboard = {
-  society: { name: string };
-  period: string;
-  month: string;
-  members: { total: number; active: number };
-  canAddMembers?: boolean;
-  importedRegister?: boolean;
-  shares: string;
-  loansOutstanding: string;
-  societyCash: string;
-  societyCashLedger?: string;
-  societyCashBreakdown?: {
-    total: string;
-    adds: { name: string; amount: string }[];
-    less: { name: string; amount: string }[];
-    also?: { name: string; amount: string }[];
-  };
-  monthCollected?: { total: string; share: string; interest: string; principal: string; penalty: string };
-  interest: {
-    accrued: string;
-    collected: string;
-    pending: string;
-    distributed: string;
-    available: string;
-    combinedAvailable?: string;
-    penaltyCollected?: string;
-    penaltyAvailable?: string;
-  };
-  installment: { monthlyShare: string; previousInterest: string; currentInterest: string; principal: string; penalty: string; total: string; stillDue: string };
-  series: { period: string; label: string; interestAccrued: string; interestCollected: string; interestDistributed: string; disbursed: string; principalRecovered: string }[];
-};
+type Dashboard = StaffDashboard;
 
 type MemberCard = {
   username?: string;
@@ -131,7 +107,7 @@ export function AdminHome() {
   const [error, setError] = useState("");
   const [societyCashBreakdownOpen, setSocietyCashBreakdownOpen] = useState(false);
   useEffect(() => {
-    api<Dashboard>("/api/dashboard").then(setData).catch((err) => setError(err.message));
+    fetchStaffDashboard(booksVersion).then(setData).catch((err) => setError(err.message));
   }, [booksVersion]);
   if (error) return <Shell admin><p className="text-clay">{error}</p></Shell>;
   if (!data) return <Shell admin><PageSkeleton cards={2} /></Shell>;
@@ -1488,7 +1464,6 @@ function distributionPayoutLabel(entry: DistributionEntryRow) {
 export function AdminInterest() {
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
-  const [example, setExample] = useState<any>(null);
   const [preview, setPreview] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -1543,7 +1518,6 @@ export function AdminInterest() {
   };
   useEffect(() => {
     Promise.all([
-      api("/api/interest/example").then(setExample),
       api<any[]>("/api/interest/distributions").then(setRuns),
       fetchOpenPeriod(booksVersion).then((row) => setPeriod(row.period)),
     ]).finally(() => setReady(true));
@@ -1568,17 +1542,6 @@ export function AdminInterest() {
     <Shell admin>
       <h1 className="text-3xl font-semibold">Interest &amp; penalty distribution</h1>
       {!ready && <PageSkeleton cards={2} />}
-      {ready && example && (
-        <Card>
-          <div className="text-sm text-gold">Worked example</div>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <Stat label="Interest earned" value={example.interestEarned} />
-            <div><div className="text-sm text-muted">Members</div><div className="num text-2xl">{example.members}</div></div>
-            <Stat label="Your interest" value={example.yourInterest} />
-          </div>
-          <p className="mt-3 text-sm text-muted">Ten borrowers produce different interest. Every eligible member, including the borrowers, receives the same credit from the combined pool.</p>
-        </Card>
-      )}
       {ready && (
         <Card>
           <div className="mb-3 text-sm text-muted">

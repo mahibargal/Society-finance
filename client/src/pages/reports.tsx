@@ -6,6 +6,7 @@ import { Card, Empty, Money, TableSkeleton } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useBooksVersion } from "../lib/books-refresh";
+import { fetchReportMonthSheetBootstrap } from "../lib/staff-data";
 import { formatINR } from "../lib/format";
 import { downloadReport } from "../lib/report-export";
 import { useFormatDownload } from "../lib/use-format-download";
@@ -200,7 +201,7 @@ function ReportsPage({ admin }: { admin: boolean }) {
     setBusy(true);
     void (async () => {
       try {
-        const bootstrap = await api<Sheet>("/api/reports/month-sheet");
+        const bootstrap = (await fetchReportMonthSheetBootstrap(booksVersion)) as Sheet;
         if (cancelled) return;
         const effectivePeriod = period || bootstrap.period;
         if (!period) setPeriod(effectivePeriod);

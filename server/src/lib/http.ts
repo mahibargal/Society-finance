@@ -108,7 +108,7 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
   if (isDbConnectionError(error)) {
     res.status(503).json({
       error: "DATABASE_UNAVAILABLE",
-      message: "The local database connection dropped. Wait a moment and try again. Run only one API server on port 4000.",
+      message: "The local database connection dropped. Wait a moment and try again. Run only one API server (default dev port 4087).",
       details: null,
     });
     return;

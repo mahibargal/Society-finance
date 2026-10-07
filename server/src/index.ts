@@ -42,7 +42,7 @@ const seeded = await withDbRetry(() => seedIfEmpty());
 await withDbRetry(() => ensureAccess());
 const { createApp } = await import("./app.js");
 const app = createApp();
-const port = Number(process.env.PORT ?? 4000);
+const port = Number(process.env.PORT ?? 4087);
 app.listen(port, () => {
   console.log(`Society Finance is running at http://localhost:${port}`);
   if (seeded && process.env.NODE_ENV !== "production") console.log("Loaded the demo register (local dev only).");

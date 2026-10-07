@@ -1,3 +1,5 @@
+import { DEV_API_PORT, DEV_APP_ORIGIN } from "./dev-ports";
+
 export class ApiError extends Error {
   details: unknown;
   constructor(message: string, details?: unknown) {
@@ -6,8 +8,7 @@ export class ApiError extends Error {
   }
 }
 
-const DEV_NETWORK_HINT =
-  "Dev tip: run the API on port 4000 and open http://127.0.0.1:5173, or use npm run start -w server and refresh.";
+const DEV_NETWORK_HINT = `Run npm run dev and open ${DEV_APP_ORIGIN} (API on port ${DEV_API_PORT}).`;
 
 function networkErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message.trim() : "";

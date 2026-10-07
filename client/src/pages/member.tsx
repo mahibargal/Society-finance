@@ -8,6 +8,7 @@ import { ExportDownloadButtons } from "../components/export-download-buttons";
 import { Bone, Button, Card, Empty, ListSkeleton, Money, PageSkeleton, PayoutBadge, Sheet, Stat } from "../components/ui";
 import { api } from "../lib/api";
 import { useBooksVersion } from "../lib/books-refresh";
+import { fetchMemberProfile } from "../lib/staff-data";
 import { downloadFromResponse } from "../lib/download-blob";
 import { useFormatDownload } from "../lib/use-format-download";
 import { downloadPaymentReceipt } from "../lib/payment-receipt";
@@ -16,7 +17,7 @@ import { formatINR, monthLabel } from "../lib/format";
 export function MemberHome() {
   const booksVersion = useBooksVersion();
   const [data, setData] = useState<any>(null);
-  useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
+  useEffect(() => { fetchMemberProfile(booksVersion).then(setData); }, [booksVersion]);
   if (!data) return <Shell><PageSkeleton cards={2} /></Shell>;
   const latest = data.timeline.at(-1);
   return (
@@ -92,7 +93,7 @@ export function MemberMonthReport() {
   const [data, setData] = useState<any>(null);
   const [reportError, setReportError] = useState("");
   const { downloading, run: runDownload } = useFormatDownload();
-  useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
+  useEffect(() => { fetchMemberProfile(booksVersion).then(setData); }, [booksVersion]);
   if (!data) return <Shell><PageSkeleton cards={1} /></Shell>;
   return (
     <Shell>
@@ -130,7 +131,7 @@ export function MemberPayments() {
   const [data, setData] = useState<any>(null);
   const [downloading, setDownloading] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
+  useEffect(() => { fetchMemberProfile(booksVersion).then(setData); }, [booksVersion]);
   const rows: any[] = data?.payments ?? [];
   const months = [...new Set(rows.map((row) => row.period as string))].sort((a, b) => b.localeCompare(a));
   return (
@@ -186,7 +187,7 @@ export function MemberPayments() {
 export function MemberLoan() {
   const booksVersion = useBooksVersion();
   const [data, setData] = useState<any>(null);
-  useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
+  useEffect(() => { fetchMemberProfile(booksVersion).then(setData); }, [booksVersion]);
   const loan = data?.loans?.[0];
   return (
     <Shell>
@@ -227,7 +228,7 @@ export function MemberInterest() {
   const booksVersion = useBooksVersion();
   const [data, setData] = useState<any>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
+  useEffect(() => { fetchMemberProfile(booksVersion).then(setData); }, [booksVersion]);
   const rows = (data?.interestHistory ?? []) as InterestHistoryRow[];
   const summary = data?.interestSummary;
   const earned = summary?.earned ?? data?.member.interestEarned ?? "0.00";
@@ -299,7 +300,7 @@ export function MemberMore() {
   const booksVersion = useBooksVersion();
   const [data, setData] = useState<any>(null);
   const [text, setText] = useState("");
-  useEffect(() => { api("/api/me").then(setData); }, [booksVersion]);
+  useEffect(() => { fetchMemberProfile(booksVersion).then(setData); }, [booksVersion]);
   return (
     <Shell>
       <h1 className="text-3xl font-semibold">More</h1>

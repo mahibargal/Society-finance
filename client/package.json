@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev": "vite --host 0.0.0.0 --port 5187 --strictPort",
     "icons": "node scripts/icons.mjs",
     "build": "vite build",
     "preview": "vite preview"

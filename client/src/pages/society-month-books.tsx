@@ -14,6 +14,7 @@ import { Button, Card, TableSkeleton } from "../components/ui";
 import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useBooksVersion } from "../lib/books-refresh";
+import { fetchReportMonthSheetBootstrap } from "../lib/staff-data";
 import { downloadReport, printReport } from "../lib/report-export";
 import { useFormatDownload } from "../lib/use-format-download";
 
@@ -57,7 +58,7 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
     setBusy(true);
     void (async () => {
       try {
-        const bootstrap = await api<MonthSheet>("/api/reports/month-sheet");
+        const bootstrap = (await fetchReportMonthSheetBootstrap(booksVersion)) as MonthSheet;
         if (cancelled) return;
         const effectivePeriod = period || bootstrap.period;
         if (!period) setPeriod(effectivePeriod);

@@ -1,7 +1,9 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useBooksVersion } from "../lib/books-refresh";
 import { downloadPaymentReceipt } from "../lib/payment-receipt";
+import { fetchNotifications, replaceNotificationsCache } from "../lib/staff-data";
 import { Bone, Empty } from "./ui";
 
 export type Alert = {
@@ -22,22 +24,35 @@ function whenLabel(iso: string) {
 }
 
 export function AlertsPanel({ open, onClose, onCountChange }: { open: boolean; onClose: () => void; onCountChange: (unread: number) => void }) {
+  const booksVersion = useBooksVersion();
   const [rows, setRows] = useState<Alert[] | null>(null);
   const [downloading, setDownloading] = useState("");
   const [downloadError, setDownloadError] = useState("");
   useEffect(() => {
     if (!open) return;
-    setRows(null);
-    api<Alert[]>("/api/notifications")
-      .then((list) => { setRows(list); onCountChange(list.filter((row) => !row.readAt).length); })
-      .catch(() => setRows([]));
-  }, [open]);
+    let cancelled = false;
+    fetchNotifications(booksVersion)
+      .then((list) => {
+        if (cancelled) return;
+        const alerts = list as Alert[];
+        setRows(alerts);
+        replaceNotificationsCache(booksVersion, alerts);
+        onCountChange(alerts.filter((row) => !row.readAt).length);
+      })
+      .catch(() => {
+        if (!cancelled) setRows([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, booksVersion, onCountChange]);
 
   const markRead = async (ids: string[]) => {
     if (ids.length === 0) return;
     await Promise.all(ids.map((id) => api(`/api/notifications/${id}/read`, { method: "POST" })));
     setRows((current) => {
       const next = (current ?? []).map((row) => (ids.includes(row.id) ? { ...row, readAt: new Date().toISOString() } : row));
+      replaceNotificationsCache(booksVersion, next);
       onCountChange(next.filter((row) => !row.readAt).length);
       return next;
     });
