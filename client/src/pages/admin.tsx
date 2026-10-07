@@ -77,6 +77,7 @@ type ReopenStatus = {
 function ReopenPreviousCard() {
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [info, setInfo] = useState<ReopenStatus | null>(null);
   const [reason, setReason] = useState("Collection recorded wrongly. Reopen the previous month to correct it.");
   const [error, setError] = useState("");
@@ -105,6 +106,7 @@ function ReopenPreviousCard() {
           try {
             await api("/api/monthly-close/reopen", { method: "POST", body: JSON.stringify({ confirm: true, reason: reason.trim() }) });
             bumpBooks();
+            showToast(`${info.previousMonth} reopened. You can correct payments there.`);
             window.location.assign("/app/pay");
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not reopen the previous month");
@@ -277,6 +279,7 @@ export function AdminHome() {
 export function AdminMembers() {
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [members, setMembers] = useState<MemberCard[] | null>(null);
   const [query, setQuery] = useState("");
   const [params] = useSearchParams();
@@ -445,10 +448,12 @@ export function AdminMembers() {
               method: "POST",
               body: JSON.stringify({ ...form, username: login, mobile: normalizeMobile(form.mobile) ?? form.mobile }),
             });
+            const addedName = form.name.trim();
             setForm(blankMember());
             setError("");
             setOpen(false);
             bumpBooks();
+            showToast(addedName ? `${addedName} added as a member.` : "Member added.");
           } catch (err) { setError(err instanceof Error ? err.message : "Could not add member"); }
         }}>
           <Field label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -549,6 +554,7 @@ function MemberStatus({
   onSaved: () => void;
 }) {
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const active = member.status === "ACTIVE";
   const [reason, setReason] = useState(active ? "Member left the society" : "Member rejoined the society");
   const [error, setError] = useState("");
@@ -593,6 +599,7 @@ function MemberStatus({
           if (!ok) return;
           await api(`/api/members/${member.id}/deactivate`, { method: "POST", body: JSON.stringify({ reason }) });
           bumpBooks();
+          showToast(`${member.name} deactivated.`);
           onSaved();
         } catch (err) { setError(err instanceof Error ? err.message : "Could not update the member"); }
         finally { setBusy(false); }
@@ -613,6 +620,7 @@ function MemberStatus({
 
 function MemberLogin({ memberId, current, onSaved }: { memberId: string; current: string; onSaved: () => void }) {
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [username, setUsername] = useState(current);
   const [password, setPassword] = useState("");
   const [reason, setReason] = useState("Login issued by the society admin");
@@ -632,6 +640,7 @@ function MemberLogin({ memberId, current, onSaved }: { memberId: string; current
           setPassword("");
           setMessage("Login saved. Share the username and password with the member.");
           bumpBooks();
+          showToast("Member login saved.");
           onSaved();
         } catch (err) { setError(err instanceof Error ? err.message : "Could not save the login"); }
       }}>
@@ -700,6 +709,7 @@ type MonthSummary = { period: string; receipts: number; total: string };
 export function AdminPayments() {
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const loadSeq = useRef(0);
   const [rows, setRows] = useState<Receipt[]>([]);
   const [months, setMonths] = useState<MonthSummary[]>([]);
@@ -788,6 +798,7 @@ export function AdminPayments() {
                 setDownloading(row.id);
                 setError("");
                 downloadPaymentReceipt(row.id, row.receiptNo)
+                  .then(() => showToast(`Receipt ${row.receiptNo} downloaded.`))
                   .catch((err) => setError(err instanceof Error ? err.message : "Could not download receipt"))
                   .finally(() => setDownloading(""));
               }}
@@ -822,6 +833,7 @@ export function AdminPayments() {
                     try {
                       await api(`/api/payments/${row.id}/delete`, { method: "POST", body: JSON.stringify({ reason: "Entered by mistake" }) });
                       bumpBooks();
+                      showToast(`Receipt ${row.receiptNo} removed. Due restored for ${row.member}.`);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : "This receipt could not be removed.");
                     } finally {
@@ -1585,6 +1597,7 @@ export function AdminPay() {
             try {
               await api("/api/penalties", { method: "POST", body: JSON.stringify({ memberId, period, amount: moneyPayload(penaltyAmount), date: todayISO(), reason }) });
               bumpBooks();
+              showToast(`Penalty of ${formatINR(moneyPayload(penaltyAmount) || "0.00")} recorded.`);
               navigate(`/app/members/${memberId}`);
             } catch (err) { setError(err instanceof Error ? err.message : "Could not add penalty"); }
           }}>Save penalty</Button>
@@ -1643,6 +1656,7 @@ function validateDisburseLoan(form: {
 export function AdminLoans() {
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [loans, setLoans] = useState<any[] | null>(null);
   const [history, setHistory] = useState<LoanGiven[]>([]);
   const [historyYears, setHistoryYears] = useState<string[]>([]);
@@ -1802,7 +1816,13 @@ export function AdminLoans() {
             return;
           }
           setError("");
-          try { await api("/api/loans", { method: "POST", body: JSON.stringify(form) }); setOpen(false); bumpBooks(); await load(); }
+          try {
+            await api("/api/loans", { method: "POST", body: JSON.stringify(form) });
+            setOpen(false);
+            bumpBooks();
+            showToast(`Loan of ${formatINR(form.amount)} disbursed.`);
+            await load();
+          }
           catch (err) { setError(err instanceof Error ? err.message : "Could not disburse"); }
         }}>
           <label className="block text-sm text-muted">Member <span className="text-clay">*</span>
@@ -1845,6 +1865,7 @@ function distributionPayoutLabel(entry: DistributionEntryRow) {
 export function AdminInterest() {
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [preview, setPreview] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -2051,6 +2072,7 @@ export function AdminInterest() {
                   bumpBooks();
                   setRuns(await api("/api/interest/distributions"));
                   setPayoutOpen(false);
+                  showToast(`Interest and penalty distributed for ${monthLabel(period)}.`);
                   await loadPreview(period);
                 } catch (err) {
                   setError(err instanceof Error ? err.message : "Could not confirm");
@@ -2203,6 +2225,7 @@ export function AdminInterest() {
 
 export function AdminClose() {
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [preview, setPreview] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
@@ -2311,6 +2334,7 @@ export function AdminClose() {
               try {
                 await api("/api/monthly-close/confirm", { method: "POST", body: JSON.stringify({ confirm: true, reason }) });
                 bumpBooks();
+                showToast("Month closed. The next month is now open.");
                 location.href = "/app";
               } catch (err) {
                 const details = err instanceof ApiError ? err.details : null;
@@ -2397,6 +2421,7 @@ export function AdminSettings() {
 
 function SocietyCard({ settings, owner, onSaved }: { settings: any; owner: boolean; onSaved: (saved: Record<string, string>) => void }) {
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const { refresh: refreshAuth } = useAuth();
   const [form, setForm] = useState({ name: settings.name, address: settings.address, phone: settings.phone, email: settings.email });
   const [reason, setReason] = useState("Updated the society details");
@@ -2430,6 +2455,7 @@ function SocietyCard({ settings, owner, onSaved }: { settings: any; owner: boole
           await refreshAuth();
           setError("");
           setSaved("Society details saved.");
+          showToast("Society details saved.");
         } catch (err) {
           setSaved("");
           setError(err instanceof Error ? err.message : "Could not save");
@@ -2451,6 +2477,7 @@ function SocietyCard({ settings, owner, onSaved }: { settings: any; owner: boole
 
 function MonthlyShareCard({ share, owner, onSaved }: { share: string; owner: boolean; onSaved: (share: string) => void }) {
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [value, setValue] = useState(share);
   const [reason, setReason] = useState("Changed the monthly share");
   const [error, setError] = useState("");
@@ -2468,7 +2495,9 @@ function MonthlyShareCard({ share, owner, onSaved }: { share: string; owner: boo
             onSaved(value);
             bumpBooks();
             setError("");
-            setSaved(`New members will pay ${formatINR(value)} each month.`);
+            const msg = `New members will pay ${formatINR(value)} each month.`;
+            setSaved(msg);
+            showToast(msg);
           } catch (err) {
             setSaved("");
             setError(err instanceof Error ? err.message : "Could not save");
@@ -2488,6 +2517,7 @@ function MonthlyShareCard({ share, owner, onSaved }: { share: string; owner: boo
 }
 
 function PasswordCard() {
+  const showToast = useToast();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [error, setError] = useState("");
@@ -2504,6 +2534,7 @@ function PasswordCard() {
           setNext("");
           setError("");
           setSaved("Password changed.");
+          showToast("Password changed.");
         } catch (err) {
           setSaved("");
           setError(err instanceof Error ? err.message : "Could not change the password");
@@ -2528,6 +2559,7 @@ function rateToPercent(rate: string) {
 
 function InterestRateCard({ rate, onSaved }: { rate: string; onSaved: (rate: string) => void }) {
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const [percent, setPercent] = useState(rateToPercent(rate));
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -2545,7 +2577,9 @@ function InterestRateCard({ rate, onSaved }: { rate: string; onSaved: (rate: str
           const updated = await api<{ interestRate: string }>("/api/settings", { method: "PATCH", body: JSON.stringify({ interestPercent: percent, reason: "Society admin set the monthly interest rate" }) });
           onSaved(updated.interestRate);
           bumpBooks();
-          setSaved(`Saved at ${percent}% per month.`);
+          const msg = `Saved at ${percent}% per month.`;
+          setSaved(msg);
+          showToast(msg);
           setError("");
         } catch (err) { setError(err instanceof Error ? err.message : "Could not save the interest rate"); }
       }}>
@@ -2626,6 +2660,7 @@ function ImportPanel() {
   const { refresh } = useAuth();
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
+  const showToast = useToast();
   const now = currentPeriod();
   const importMonths = importAllowedMonths(now);
   const defaultMonth = importMonths[0] ?? now;
@@ -2701,6 +2736,7 @@ function ImportPanel() {
                   clearImportDraft();
                   clearManualMembersChoice();
                   bumpBooks();
+                  showToast("Imported register data removed.");
                   setMemberCount(0);
                   setRollback({ imported: false, canRollback: false, blockedReason: "" });
                   setPreview(null);
@@ -2822,6 +2858,7 @@ function ImportPanel() {
                   setPreview(null);
                   setUploadedFileName("");
                   clearImportDraft();
+                  showToast("Uploaded sheet removed.");
                 } catch (err) {
                   setError(err instanceof Error ? err.message : "Could not remove the uploaded sheet");
                 } finally {
@@ -2854,6 +2891,7 @@ function ImportPanel() {
               await api("/api/import/confirm", { method: "POST", body: JSON.stringify({ confirm: true, reason: reason.trim(), period, rows: preview.rows }) });
               clearImportDraft();
               clearManualMembersChoice();
+              showToast(`${monthLabel(period)} opened from the register.`);
               window.location.assign("/app");
             } catch (err) { setError(err instanceof Error ? err.message : "Import was not posted"); }
             finally { setBusy(false); }

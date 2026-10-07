@@ -19,6 +19,7 @@ import { alertPaymentAlreadyCollected } from "../lib/collect-payment";
 import { fetchReportMonthSheetBootstrap } from "../lib/staff-data";
 import { downloadReport, printReport } from "../lib/report-export";
 import { useFormatDownload } from "../lib/use-format-download";
+import { useToast } from "../lib/toast";
 
 type BookKind = "month-sheet" | "month-collected" | "monthly";
 
@@ -56,6 +57,7 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const { downloading, run: runDownload } = useFormatDownload();
+  const showToast = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +132,7 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
             void runDownload(format, async () => {
               setError("");
               await downloadReport(meta.reportId, format, filePeriod);
+              showToast(format === "pdf" ? "Sheet PDF downloaded." : "Sheet Excel downloaded.");
             }).catch((err) =>
               setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Download failed"),
             );

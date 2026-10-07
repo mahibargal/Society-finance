@@ -6,7 +6,7 @@ type ToastItem = { id: number; message: string; tone: ToastTone };
 
 const ToastContext = createContext<(message: string, tone?: ToastTone) => void>(() => undefined);
 
-const DISMISS_MS = 4500;
+const DISMISS_MS = 2500;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -27,20 +27,30 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       <div
-        className="pointer-events-none fixed inset-x-0 z-[100] flex flex-col items-center gap-2 px-4 bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-8"
+        className="app-toast-stack pointer-events-none fixed inset-x-0 z-[110] flex flex-col items-center gap-2 px-4"
         aria-live="polite"
       >
         {toasts.map((toast) => (
           <div
             key={toast.id}
             role="status"
-            className={`max-w-md rounded-2xl border px-4 py-3 text-center text-sm font-medium shadow-[0_12px_40px_rgba(15,23,42,0.12)] ${
+            className={`pointer-events-auto max-w-md rounded-2xl border px-4 py-3 text-sm font-medium shadow-[0_12px_40px_rgba(15,23,42,0.12)] ${
               toast.tone === "success"
-                ? "border-moss/30 bg-white text-moss"
+                ? "border-moss/30 bg-white text-ink"
                 : "border-clay/30 bg-white text-clay"
             }`}
           >
-            {toast.message}
+            <span className="flex items-start justify-center gap-2 text-center">
+              <span
+                className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                  toast.tone === "success" ? "bg-moss text-white" : "bg-clay text-white"
+                }`}
+                aria-hidden
+              >
+                {toast.tone === "success" ? "✓" : "!"}
+              </span>
+              <span>{toast.message}</span>
+            </span>
           </div>
         ))}
       </div>

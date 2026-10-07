@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Shell } from "../components/shell";
 import { Button, Card, Empty, Field, ListSkeleton, Segmented } from "../components/ui";
 import { api } from "../lib/api";
+import { useToast } from "../lib/toast";
 
 type SocietyRow = {
   id: string;
@@ -19,13 +20,13 @@ export function PlatformHome() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [resetId, setResetId] = useState("");
+  const showToast = useToast();
   const [resetPassword, setResetPassword] = useState("");
-  const [resetError, setResetError] = useState("");
-  const [resetSaved, setResetSaved] = useState("");
   const [ready, setReady] = useState(false);
+  const [statusPrompt, setStatusPrompt] = useState<{ adminId: string; adminName: string; next: boolean } | null>(null);
+  const [statusReason, setStatusReason] = useState("");
+  const [statusBusy, setStatusBusy] = useState(false);
 
   async function load() {
     const data = await api<{ societies: SocietyRow[] }>("/api/platform");
@@ -34,6 +35,43 @@ export function PlatformHome() {
   }
 
   useEffect(() => { void load().finally(() => setReady(true)); }, []);
+
+  function openAdminStatusPrompt(admin: SocietyRow["admins"][number]) {
+    setStatusPrompt({ adminId: admin.id, adminName: admin.name, next: !admin.isActive });
+    setStatusReason("");
+  }
+
+  function closeAdminStatusPrompt() {
+    setStatusPrompt(null);
+    setStatusReason("");
+  }
+
+  async function confirmAdminStatus() {
+    if (!statusPrompt) return;
+    const reason = statusReason.trim();
+    if (reason.length < 3) {
+      closeAdminStatusPrompt();
+      showToast("Enter a reason with at least 3 characters (for example why this admin is being deactivated).", "error");
+      return;
+    }
+    setStatusBusy(true);
+    try {
+      await api(`/api/platform/admins/${statusPrompt.adminId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ active: statusPrompt.next, reason }),
+      });
+      const label = statusPrompt.adminName;
+      const activated = statusPrompt.next;
+      closeAdminStatusPrompt();
+      showToast(activated ? `${label} is now active.` : `${label} is now inactive.`);
+      await load();
+    } catch (err) {
+      closeAdminStatusPrompt();
+      showToast(err instanceof Error ? err.message : "Could not update the admin", "error");
+    } finally {
+      setStatusBusy(false);
+    }
+  }
 
   return (
     <Shell platform>
@@ -71,24 +109,14 @@ export function PlatformHome() {
                       <button
                         type="button"
                         className="min-h-10 flex-1 rounded-2xl border border-line bg-white px-3 text-xs font-semibold sm:flex-none"
-                        onClick={async () => {
-                          const next = !admin.isActive;
-                          const reason = window.prompt(next ? "Reason for activating this admin" : "Reason for deactivating this admin");
-                          if (!reason || reason.trim().length < 3) return;
-                          try {
-                            await api(`/api/platform/admins/${admin.id}/status`, { method: "POST", body: JSON.stringify({ active: next, reason: reason.trim() }) });
-                            await load();
-                          } catch (err) {
-                            window.alert(err instanceof Error ? err.message : "Could not update the admin");
-                          }
-                        }}
+                        onClick={() => openAdminStatusPrompt(admin)}
                       >
                         {admin.isActive ? "Deactivate" : "Activate"}
                       </button>
                       <button
                         type="button"
                         className="min-h-10 flex-1 rounded-2xl border border-line bg-white px-3 text-xs font-semibold sm:flex-none"
-                        onClick={() => { setResetId(resetId === admin.id ? "" : admin.id); setResetPassword(""); setResetError(""); setResetSaved(""); }}
+                        onClick={() => { setResetId(resetId === admin.id ? "" : admin.id); setResetPassword(""); }}
                       >
                         {resetId === admin.id ? "Cancel" : "Change password"}
                       </button>
@@ -97,19 +125,17 @@ export function PlatformHome() {
                   {resetId === admin.id && (
                     <form className="mt-3 grid gap-2" onSubmit={async (event) => {
                       event.preventDefault();
-                      setResetError("");
-                      setResetSaved("");
                       try {
                         await api(`/api/platform/admins/${admin.id}/password`, { method: "POST", body: JSON.stringify({ next: resetPassword }) });
                         setResetPassword("");
-                        setResetSaved(`New password saved for @${admin.username}. They must sign in again.`);
+                        setResetId("");
+                        showToast(`New password saved for @${admin.username}. They must sign in again.`);
                       } catch (err) {
-                        setResetError(err instanceof Error ? err.message : "Could not change the password");
+                        setResetId("");
+                        showToast(err instanceof Error ? err.message : "Could not change the password", "error");
                       }
                     }}>
                       <Field label="New password" type="password" value={resetPassword} onChange={setResetPassword} placeholder="At least 8 characters" />
-                      {resetError && <p className="text-sm text-clay">{resetError}</p>}
-                      {resetSaved && <p className="text-sm text-moss">{resetSaved}</p>}
                       <Button type="submit" disabled={resetPassword.length < 8}>Save password</Button>
                     </form>
                   )}
@@ -124,8 +150,6 @@ export function PlatformHome() {
         <h2 className="text-xl font-semibold">Add a society admin</h2>
         <form className="mt-4 grid gap-3" onSubmit={async (event) => {
           event.preventDefault();
-          setError("");
-          setMessage("");
           try {
             const created = await api<{ username: string; societyName: string }>("/api/platform/admins", {
               method: "POST",
@@ -138,17 +162,21 @@ export function PlatformHome() {
                 monthlyShare: mode === "new" ? monthlyShare : undefined,
               }),
             });
-            setMessage(`${created.username} can now sign in to ${created.societyName}.`);
+            showToast(`${created.username} can now sign in to ${created.societyName}.`);
             setName("");
             setUsername("");
             setPassword("");
             setSocietyName("");
             await load();
           } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not create the admin");
+            showToast(err instanceof Error ? err.message : "Could not create the admin", "error");
           }
         }}>
-          <Segmented value={mode} onChange={setMode} options={[{ id: "existing", label: "Existing society" }, { id: "new", label: "New society" }]} />
+          <Segmented
+            value={mode}
+            onChange={setMode}
+            options={[{ id: "existing", label: "Existing society" }, { id: "new", label: "New society" }]}
+          />
           {mode === "existing" ? (
             <label className="block">
               <span className="mb-1.5 block text-sm text-muted">Society</span>
@@ -165,11 +193,60 @@ export function PlatformHome() {
           <Field label="Admin name" value={name} onChange={setName} placeholder="ABC" />
           <Field label="Username" value={username} onChange={setUsername} placeholder="abc" />
           <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="At least 8 characters" />
-          {error && <p className="text-sm text-clay">{error}</p>}
-          {message && <p className="text-sm text-moss">{message}</p>}
           <Button type="submit">Create society admin</Button>
         </form>
       </Card>
+
+      {statusPrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-moss/25 p-3 backdrop-blur-[2px] sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-status-reason-title"
+          onClick={() => {
+            if (statusBusy) return;
+            closeAdminStatusPrompt();
+          }}
+        >
+          <div className="w-full max-w-md rounded-[28px] bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h2 id="admin-status-reason-title" className="text-lg font-semibold">
+              {statusPrompt.next ? "Activate admin" : "Deactivate admin"}
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              {statusPrompt.next
+                ? `Why are you activating ${statusPrompt.adminName}?`
+                : `Why are you deactivating ${statusPrompt.adminName}?`}
+            </p>
+            <form
+              className="mt-4 grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void confirmAdminStatus();
+              }}
+            >
+              <Field
+                label="Reason"
+                value={statusReason}
+                onChange={setStatusReason}
+                placeholder="At least 3 characters"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" loading={statusBusy} disabled={statusBusy}>
+                  {statusPrompt.next ? "Activate" : "Deactivate"}
+                </Button>
+                <Button
+                  type="button"
+                  tone="ghost"
+                  disabled={statusBusy}
+                  onClick={() => closeAdminStatusPrompt()}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }

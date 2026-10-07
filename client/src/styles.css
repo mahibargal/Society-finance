@@ -67,9 +67,21 @@ body {
   padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
 }
 
+.app-toast-stack {
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+html:has(.tab-bar) .app-toast-stack {
+  bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+}
+
 @media (min-width: 1024px) {
   .safe-bottom {
     padding-bottom: 2.5rem;
+  }
+
+  .app-toast-stack {
+    bottom: 2rem;
   }
 }
 

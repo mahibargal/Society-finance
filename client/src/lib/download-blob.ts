@@ -41,16 +41,37 @@ function triggerAnchorDownload(url: string, filename: string, targetBlank = fals
   document.body.removeChild(link);
 }
 
-/** Download or open a blob without navigating the app away (iOS PDF blank-screen workaround). */
+function iosShareFile(blob: Blob, filename: string) {
+  if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function") return false;
+  try {
+    const file = new File([blob], filename, {
+      type: blob.type || "application/octet-stream",
+    });
+    if (!navigator.canShare({ files: [file] })) return false;
+    void navigator.share({ files: [file] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Download or open a blob without navigating the SPA away (iOS Safari navigates in-place on `<a download>`). */
 export function saveBlob(blob: Blob, filename: string) {
   if (shouldSkipDuplicateSave(filename)) return;
 
   const url = URL.createObjectURL(blob);
   const isPdf = /\.pdf$/i.test(filename) || blob.type.includes("pdf");
-  /** iOS: new tab avoids blank in-app PDF. Android: <a download> once — window.open often downloads twice. */
-  const openPdfInNewTab = isPdf && isIos() && !isAndroid();
+  const ios = isIos() && !isAndroid();
 
-  if (openPdfInNewTab) {
+  if (ios && !isPdf && iosShareFile(blob, filename)) {
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+    return;
+  }
+
+  /** iOS: new tab (or share above) — in-tab blob navigation breaks back to Reports. Android: <a download> once. */
+  const openInNewTab = ios;
+
+  if (openInNewTab) {
     const opened = window.open(url, "_blank", "noopener,noreferrer");
     if (!opened) triggerAnchorDownload(url, filename, true);
   } else {

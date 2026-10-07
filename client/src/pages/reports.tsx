@@ -10,6 +10,7 @@ import { fetchReportMonthSheetBootstrap } from "../lib/staff-data";
 import { formatINR } from "../lib/format";
 import { downloadReport } from "../lib/report-export";
 import { useFormatDownload } from "../lib/use-format-download";
+import { useToast } from "../lib/toast";
 
 const reports = [
   ["month-sheet", "Month sheet — to collect"],
@@ -194,6 +195,7 @@ function ReportsPage({ admin }: { admin: boolean }) {
   const [reportError, setReportError] = useState("");
   const [busy, setBusy] = useState(true);
   const { downloading, run: runDownload } = useFormatDownload();
+  const showToast = useToast();
   const { session } = useAuth();
   /** One loader avoids two requests racing: the due sheet must not overwrite the collected sheet after a payment. */
   useEffect(() => {
@@ -244,6 +246,7 @@ function ReportsPage({ admin }: { admin: boolean }) {
     void runDownload(format, async () => {
       setReportError("");
       await downloadReport(report, format, filePeriod);
+      showToast(format === "pdf" ? "Report PDF downloaded." : "Report Excel downloaded.");
     }).catch((err) => setReportError(err instanceof Error ? err.message : "Download failed"));
   };
   return (

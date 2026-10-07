@@ -168,14 +168,6 @@ export async function setSocietyAdminActive(auth: AuthUser, userId: string, acti
   if (user.isActive === active) {
     return { id: user.id, username: user.username, isActive: user.isActive, societyName: user.society?.name ?? "" };
   }
-  if (!active && user.role === "OWNER" && user.societyId) {
-    const otherOwners = await prisma.user.count({
-      where: { societyId: user.societyId, role: "OWNER", isActive: true, id: { not: user.id } },
-    });
-    if (otherOwners === 0) {
-      throw new HttpError(400, "Keep at least one lead admin active so the society can still sign in");
-    }
-  }
   await prisma.user.update({
     where: { id: user.id },
     data: { isActive: active, tokenVersion: { increment: 1 } },

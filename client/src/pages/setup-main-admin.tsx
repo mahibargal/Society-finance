@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button, Field } from "../components/ui";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useToast } from "../lib/toast";
 
 type SetupStatus = { needsMainAdmin: boolean; tokenConfigured: boolean; setupEnabled: boolean };
 
@@ -14,8 +15,8 @@ export function SetupMainAdminPage() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const showToast = useToast();
 
   useEffect(() => {
     api<SetupStatus>("/api/auth/setup-main-admin/status")
@@ -26,7 +27,6 @@ export function SetupMainAdminPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
-    setError("");
     try {
       const session = await api<{ user: { role: string } }>("/api/auth/setup-main-admin", {
         method: "POST",
@@ -36,7 +36,7 @@ export function SetupMainAdminPage() {
       void refresh();
       navigate("/platform", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create main admin");
+      showToast(err instanceof Error ? err.message : "Could not create main admin", "error");
     } finally {
       setBusy(false);
     }
@@ -99,7 +99,6 @@ export function SetupMainAdminPage() {
           <Field label="Your name" value={name} onChange={setName} placeholder="Main admin" />
           <Field label="Username" value={username} onChange={setUsername} placeholder="main" />
           <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="At least 8 characters" />
-          {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-clay">{error}</p>}
           <Button type="submit" disabled={busy || setupToken.length < 16 || username.length < 3 || password.length < 8}>
             {busy ? "Creating…" : "Create and sign in"}
           </Button>
