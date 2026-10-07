@@ -13,6 +13,25 @@ export type MemberCard = {
   principalDue: string;
   interestBalance?: string;
   collectedThisOpenMonth?: boolean;
+  shareDue?: string;
+  interestDue?: string;
+  previousSharePending?: string;
+  previousInterestPending?: string;
+  previousPending?: string;
+  penaltyDue?: string;
+  /** Installment column on Month to collect (excludes penalty). */
+  installmentDue?: string;
+  installmentBreakdown?: {
+    share: string;
+    previousInterest: string;
+    currentInterest: string;
+    principal: string;
+    penalty?: string;
+    total: string;
+  };
+  monthlyShare?: string;
+  principalDue?: string;
+  scheduledPrincipal?: string;
 };
 
 export type RegisterPolicy = { canAddMembers: boolean; importedRegister?: boolean };
@@ -51,6 +70,18 @@ const notificationsByVersion = new Map<number, NotificationRow[]>();
 const dashboardByVersion = new Map<number, StaffDashboard>();
 const memberProfileByVersion = new Map<number, MemberProfile>();
 const monthSheetBootstrapByVersion = new Map<number, ReportMonthSheetBootstrap>();
+
+/** Drop cached staff reads so the next fetch hits the API (after bumpBooks). */
+export function invalidateStaffDataCaches() {
+  membersByVersion.clear();
+  registerPolicyByVersion.clear();
+  openPeriodByVersion.clear();
+  notificationsByVersion.clear();
+  dashboardByVersion.clear();
+  memberProfileByVersion.clear();
+  monthSheetBootstrapByVersion.clear();
+  inflight.clear();
+}
 
 type NotificationRow = { id: string; readAt: string | null };
 

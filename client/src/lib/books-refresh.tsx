@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { invalidateStaffDataCaches } from "./staff-data";
 
 type BooksRefreshContextValue = {
   version: number;
@@ -12,7 +13,10 @@ const BooksRefreshContext = createContext<BooksRefreshContextValue>({
 
 export function BooksRefreshProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0);
-  const bumpBooks = useCallback(() => setVersion((current) => current + 1), []);
+  const bumpBooks = useCallback(() => {
+    invalidateStaffDataCaches();
+    setVersion((current) => current + 1);
+  }, []);
   const value = useMemo(() => ({ version, bumpBooks }), [version, bumpBooks]);
   return <BooksRefreshContext.Provider value={value}>{children}</BooksRefreshContext.Provider>;
 }

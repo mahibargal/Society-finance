@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { MonthCalendar } from "../components/month-calendar";
 import { Shell } from "../components/shell";
 import {
@@ -14,6 +15,7 @@ import { Button, Card, TableSkeleton } from "../components/ui";
 import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useBooksVersion } from "../lib/books-refresh";
+import { alertPaymentAlreadyCollected } from "../lib/collect-payment";
 import { fetchReportMonthSheetBootstrap } from "../lib/staff-data";
 import { downloadReport, printReport } from "../lib/report-export";
 import { useFormatDownload } from "../lib/use-format-download";
@@ -43,6 +45,8 @@ const META: Record<BookKind, { title: string; subtitle: string; reportId: string
 
 function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind }) {
   const meta = META[kind];
+  const navigate = useNavigate();
+  const location = useLocation();
   const booksVersion = useBooksVersion();
   const { session } = useAuth();
   const [period, setPeriod] = useState("");
@@ -93,12 +97,21 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
 
   const societyName = session?.society.name ?? "Society Finance";
   const filePeriod = kind === "monthly" ? undefined : period || sheet?.period;
+  const viewingPeriod = period || sheet?.period || openPeriod || "";
+
+  function rowHasReceipt(row: Record<string, string>) {
+    const flag = row.collectedThisOpenMonth as string | boolean | undefined;
+    return flag === true || flag === "true" || flag === "1";
+  }
 
   return (
     <Shell admin={admin}>
       <div>
         <h1 className="text-3xl font-semibold">{meta.title}</h1>
-        <p className="mt-1 text-sm text-muted">{meta.subtitle}</p>
+        <p className="mt-1 text-sm text-muted">
+          {meta.subtitle}
+          {admin && kind === "month-sheet" && " Tap a member row to collect payment for them."}
+        </p>
       </div>
       <Card className="no-print grid gap-3">
         {sheet && sheet.periods.length > 0 && kind !== "monthly" && (
@@ -153,6 +166,27 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
               rows={sheet.rows}
               totals={sheet.totals}
               columns={kind === "month-collected" ? COLLECTED_COLUMNS : DUE_COLUMNS}
+              showCollectionStatus={admin && kind === "month-sheet" && Boolean(openPeriod && viewingPeriod === openPeriod)}
+              onRowClick={
+                admin && kind === "month-sheet"
+                  ? (row) => {
+                      if (!row.memberId) return;
+                      if (openPeriod && viewingPeriod !== openPeriod) {
+                        window.alert("Switch to the open month on this sheet to collect payment.");
+                        return;
+                      }
+                      if (rowHasReceipt(row)) {
+                        alertPaymentAlreadyCollected();
+                        return;
+                      }
+                      const returnTo = location.pathname;
+                      navigate(
+                        `/app/pay?member=${encodeURIComponent(row.memberId)}&returnTo=${encodeURIComponent(returnTo)}`,
+                        { state: { returnTo } },
+                      );
+                    }
+                  : undefined
+              }
             />
             {kind === "month-collected" && <LoansGivenTable month={sheet.month} rows={sheet.loansGiven} />}
           </>

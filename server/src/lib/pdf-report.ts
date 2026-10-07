@@ -118,6 +118,20 @@ export function columnLabel(key: string) {
   return COLUMN_LABELS[key] ?? key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
 }
 
+/** UI / API-only keys on month-to-collect rows — not for printed or spreadsheet exports. */
+const MONTH_SHEET_INTERNAL_ROW_KEYS = new Set([
+  "memberId",
+  "collectedThisOpenMonth",
+  "collectionStatus",
+  "collectionStatusLabel",
+]);
+
+export function monthSheetRowsForExport(rows: Record<string, unknown>[]) {
+  return rows.map((row) =>
+    Object.fromEntries(Object.entries(row).filter(([key]) => !MONTH_SHEET_INTERNAL_ROW_KEYS.has(key))),
+  );
+}
+
 function plain(value: unknown, unicode: boolean) {
   const text = value == null ? "" : String(value);
   if (unicode) return text;

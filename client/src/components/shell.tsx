@@ -2,6 +2,7 @@ import { Bell, Building2, CalendarCheck, ChevronLeft, ClipboardList, FileText, H
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { collectPaymentReturnTo } from "../lib/collect-payment";
 import { useBooksVersion } from "../lib/books-refresh";
 import { showAddMember } from "../lib/register-setup";
 import { fetchMemberCards, fetchNotifications, fetchRegisterPolicy } from "../lib/staff-data";
@@ -229,7 +230,12 @@ export function Shell({ children, admin = false, platform = false }: { children:
   function goBack() {
     const path = location.pathname;
     if (path.startsWith("/app/members/") && path !== "/app/members") navigate("/app/members");
-    else if (path === "/app/pay") navigate("/app/payments");
+    else if (path === "/app/pay") {
+      const returnTo = collectPaymentReturnTo(location.state, location.search);
+      if (returnTo) navigate(returnTo);
+      else if (location.key !== "default") navigate(-1);
+      else navigate("/app/payments");
+    }
     else if (path === "/app/audit" || path === "/app/import") navigate("/app/settings");
     else if (path.startsWith("/app/month-")) navigate("/app");
     else if (path.startsWith("/me/month-") || path === "/me/my-report") navigate("/me");

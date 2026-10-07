@@ -280,7 +280,7 @@ describe("month-close society balance", () => {
       name: owner.name,
       tokenVersion: owner.tokenVersion,
     };
-    await createMember(auth, {
+    const first = await createMember(auth, {
       name: "First Member",
       mobile: "9876543201",
       joiningDate: `${period}-01`,
@@ -288,6 +288,19 @@ describe("month-close society balance", () => {
       username: `zrf${stamp}`,
       password: "Member@2026",
       reason: "Before close",
+    });
+    await postPayment(auth, {
+      memberId: first.id,
+      period,
+      amount: "0.00",
+      paidOn: `${period}-10`,
+      reason: "Marked collected at ₹0",
+      idempotencyKey: `mark-first-${stamp}`,
+      allocation: [
+        { component: "SHARE", amount: "0.00" },
+        { component: "CURRENT_INTEREST", amount: "0.00" },
+        { component: "PREVIOUS_INTEREST", amount: "0.00" },
+      ],
     });
     await confirmClose(auth, "Close first month");
     await expect(

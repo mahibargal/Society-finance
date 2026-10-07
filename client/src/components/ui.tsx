@@ -65,7 +65,7 @@ export function Field({
   disabled = false,
   title,
 }: {
-  label: string;
+  label?: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
@@ -77,7 +77,7 @@ export function Field({
 }) {
   return (
     <label className="block" title={title}>
-      <span className="mb-1.5 block text-sm text-muted">{label}</span>
+      {label ? <span className="mb-1.5 block text-sm text-muted">{label}</span> : null}
       <input
         type={type}
         inputMode={inputMode}

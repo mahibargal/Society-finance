@@ -31,6 +31,7 @@ import {
   sumMoney,
   subtractMoney,
 } from "../engine/finance.js";
+import { buildReceiptStorageNote } from "./payment-receipt-presentation.js";
 import {
   calendarPeriod,
   formatINR,
@@ -150,6 +151,23 @@ async function shareAssessmentRoom(tx: Tx, societyId: string, memberId: string) 
   );
 }
 
+async function shareAssessmentRoomFor(
+  tx: Tx,
+  societyId: string,
+  memberId: string,
+  match: (reference: string) => boolean,
+) {
+  const assessments = await tx.shareTransaction.findMany({ where: { societyId, memberId } });
+  return sumMoney(
+    assessments
+      .filter((row) => match(row.reference))
+      .map((row) => {
+        const room = subtractMoney(str(row.amount), str(row.cashEffect));
+        return money(room).greaterThan(0) ? room : "0.00";
+      }),
+  );
+}
+
 /** Unpaid share from the sheet (this month plus arrears) must have assessment room before cash can settle it. */
 async function ensureShareAssessmentRoom(
   tx: Tx,
@@ -188,6 +206,135 @@ async function ensureShareAssessmentRoom(
   });
 }
 
+/** Arrear share cash must have SHARE-ARREARS / import rows to settle — not only this month's SHARE-ASSESS. */
+async function ensureShareArrearAssessmentRoom(
+  tx: Tx,
+  societyId: string,
+  memberId: string,
+  period: string,
+  needed: string,
+  createdById: string,
+) {
+  if (isZero(needed) || money(needed).lessThanOrEqualTo(0)) return;
+  const room = await shareAssessmentRoomFor(tx, societyId, memberId, isShareArrearAssessment);
+  if (money(needed).lessThanOrEqualTo(money(room))) return;
+  const gap = subtractMoney(needed, room);
+  const existing = await tx.shareTransaction.findFirst({
+    where: { societyId, memberId, period, reference: `SHARE-ARREARS-${period}` },
+  });
+  if (existing) {
+    await tx.shareTransaction.update({
+      where: { id: existing.id },
+      data: { amount: dec(sumMoney([str(existing.amount), gap])) },
+    });
+    return;
+  }
+  await tx.shareTransaction.create({
+    data: {
+      societyId,
+      memberId,
+      date: utcDate(statementDateFor(period)),
+      period,
+      amount: dec(gap),
+      cashEffect: dec("0.00"),
+      reason: "Unpaid share brought forward. Cash is recorded when the installment is collected.",
+      reference: `SHARE-ARREARS-${period}`,
+      createdById,
+    },
+  });
+}
+
+async function ensureShareMonthlyAssessmentRoom(
+  tx: Tx,
+  societyId: string,
+  memberId: string,
+  period: string,
+  needed: string,
+  createdById: string,
+) {
+  if (isZero(needed) || money(needed).lessThanOrEqualTo(0)) return;
+  const room = await shareAssessmentRoomFor(tx, societyId, memberId, (ref) => isShareAssessForPeriod(ref, period));
+  if (money(needed).lessThanOrEqualTo(money(room))) return;
+  const gap = subtractMoney(needed, room);
+  const existing = await tx.shareTransaction.findFirst({
+    where: { societyId, memberId, period, reference: `SHARE-ASSESS-${period}` },
+  });
+  if (existing) {
+    await tx.shareTransaction.update({
+      where: { id: existing.id },
+      data: { amount: dec(sumMoney([str(existing.amount), gap])) },
+    });
+    return;
+  }
+  await tx.shareTransaction.create({
+    data: {
+      societyId,
+      memberId,
+      date: utcDate(statementDateFor(period)),
+      period,
+      amount: dec(gap),
+      cashEffect: dec("0.00"),
+      reason: "Monthly share assessed for collection.",
+      reference: `SHARE-ASSESS-${period}`,
+      createdById,
+    },
+  });
+}
+
+function isShareArrearAssessment(reference: string) {
+  return reference.startsWith("SHARE-ARREARS") || reference.startsWith("IMPORT-SHARE");
+}
+
+function isShareAssessForPeriod(reference: string, period: string) {
+  return reference === `SHARE-ASSESS-${period}`;
+}
+
+function assertShareSplit(
+  shareTotal: string,
+  split: { monthly: string; arrear: string },
+  shareLeft: string,
+  arrearsLeft: string,
+) {
+  const sum = sumMoney([split.monthly, split.arrear]);
+  if (!money(sum).equals(money(shareTotal))) {
+    throw new HttpError(400, "Share split must add up to the share amount collected");
+  }
+  if (money(split.monthly).greaterThan(money(shareLeft))) {
+    throw new HttpError(400, "Monthly share collected exceeds the amount due this month");
+  }
+  if (money(split.arrear).greaterThan(money(arrearsLeft))) {
+    throw new HttpError(400, "Pending share collected exceeds the amount carried forward");
+  }
+}
+
+async function applyShareCashOnAssessments(
+  tx: Tx,
+  societyId: string,
+  memberId: string,
+  amount: string,
+  mode: "strict" | "heal",
+  match?: (assessment: { reference: string; period: string }) => boolean,
+) {
+  let left = amount;
+  const assessments = await tx.shareTransaction.findMany({
+    where: { societyId, memberId },
+    orderBy: [{ period: "asc" }, { createdAt: "asc" }],
+  });
+  for (const assessment of assessments) {
+    if (isZero(left)) break;
+    if (match && !match(assessment)) continue;
+    const room = subtractMoney(str(assessment.amount), str(assessment.cashEffect));
+    if (money(room).lessThanOrEqualTo(0)) continue;
+    const applied = money(left).lessThan(room) ? left : room;
+    await tx.shareTransaction.update({
+      where: { id: assessment.id },
+      data: { cashEffect: dec(sumMoney([str(assessment.cashEffect), applied])) },
+    });
+    left = subtractMoney(left, applied);
+  }
+  if (!isZero(left) && mode === "strict") throw new HttpError(409, "There is no share assessment to settle");
+}
+
 async function applyShareCash(
   tx: Tx,
   societyId: string,
@@ -202,23 +349,34 @@ async function applyShareCash(
       ?? (await tx.shareTransaction.findFirst({ where: { societyId, memberId }, orderBy: { period: "desc" } }))?.period;
     if (period) await ensureShareAssessmentRoom(tx, societyId, memberId, period, amount, createdById);
   }
-  let left = amount;
-  const assessments = await tx.shareTransaction.findMany({
-    where: { societyId, memberId },
-    orderBy: [{ period: "asc" }, { createdAt: "asc" }],
-  });
-  for (const assessment of assessments) {
-    if (isZero(left)) break;
-    const room = subtractMoney(str(assessment.amount), str(assessment.cashEffect));
-    if (money(room).lessThanOrEqualTo(0)) continue;
-    const applied = money(left).lessThan(room) ? left : room;
-    await tx.shareTransaction.update({
-      where: { id: assessment.id },
-      data: { cashEffect: dec(sumMoney([str(assessment.cashEffect), applied])) },
-    });
-    left = subtractMoney(left, applied);
+  await applyShareCashOnAssessments(tx, societyId, memberId, amount, mode);
+}
+
+async function applyShareCashWithSplit(
+  tx: Tx,
+  societyId: string,
+  memberId: string,
+  period: string,
+  amount: string,
+  split: { monthly: string; arrear: string },
+  createdById: string,
+) {
+  if (!isZero(split.arrear)) {
+    await ensureShareArrearAssessmentRoom(tx, societyId, memberId, period, split.arrear, createdById);
+    await applyShareCashOnAssessments(tx, societyId, memberId, split.arrear, "strict", (row) =>
+      isShareArrearAssessment(row.reference),
+    );
   }
-  if (!isZero(left) && mode === "strict") throw new HttpError(409, "There is no share assessment to settle");
+  if (!isZero(split.monthly)) {
+    await ensureShareMonthlyAssessmentRoom(tx, societyId, memberId, period, split.monthly, createdById);
+    await applyShareCashOnAssessments(tx, societyId, memberId, split.monthly, "strict", (row) =>
+      isShareAssessForPeriod(row.reference, period),
+    );
+  }
+  if (isZero(split.arrear) && isZero(split.monthly) && !isZero(amount)) {
+    await ensureShareAssessmentRoom(tx, societyId, memberId, period, amount, createdById);
+    await applyShareCashOnAssessments(tx, societyId, memberId, amount, "strict");
+  }
 }
 
 async function unapplyShareCash(tx: Tx, societyId: string, memberId: string, amount: string) {
@@ -1336,7 +1494,7 @@ function allocateReceipt(
     : calculatePaymentAllocation(amount, dues, order);
 }
 
-export async function previewPayment(auth: AuthUser, input: { memberId: string; period: string; amount: string; penalty?: string; collectPenalty?: boolean; collectPenaltyAmount?: string; nextMonthPenalty?: string; allocation?: { component: AllocationComponent; amount: string }[] }) {
+export async function previewPayment(auth: AuthUser, input: { memberId: string; period: string; amount: string; penalty?: string; collectPenalty?: boolean; collectPenaltyAmount?: string; nextMonthPenalty?: string; allocation?: { component: AllocationComponent; amount: string }[]; shareSplit?: { monthly: string; arrear: string } }) {
   const month = await prisma.accountingMonth.findUnique({
     where: { societyId_period: { societyId: auth.societyId, period: input.period } },
   });
@@ -1348,6 +1506,10 @@ export async function previewPayment(auth: AuthUser, input: { memberId: string; 
   const society = await prisma.society.findUniqueOrThrow({ where: { id: auth.societyId } });
   if (input.allocation) {
     const explicit = assertExplicitAllocation(input.amount, snapshot.dues, input.allocation);
+    const shareRow = explicit.allocations.find((row) => row.component === "SHARE");
+    if (input.shareSplit && shareRow && !isZero(shareRow.amount)) {
+      assertShareSplit(shareRow.amount, input.shareSplit, snapshot.shareLeft, snapshot.arrearsLeft);
+    }
     return { ...snapshot, allocation: explicit.allocations, unapplied: "0.00", mode: "EXPLICIT" as const };
   }
   const order = assertAllocationOrder(society.paymentAllocationOrder.split(","));
@@ -1384,6 +1546,7 @@ export async function postPayment(
     collectPenaltyAmount?: string;
     nextMonthPenalty?: string;
     allocation?: { component: AllocationComponent; amount: string }[];
+    shareSplit?: { monthly: string; arrear: string };
   },
 ) {
   const existing = await prisma.payment.findFirst({
@@ -1420,7 +1583,14 @@ export async function postPayment(
     const snapshot = await duesFor(auth.societyId, member.id, input.period, tx);
     const society = await tx.society.findUniqueOrThrow({ where: { id: auth.societyId } });
     const computed = input.allocation
-      ? { ...assertExplicitAllocation(input.amount, snapshot.dues, input.allocation), unapplied: "0.00" }
+      ? (() => {
+          const explicit = assertExplicitAllocation(input.amount, snapshot.dues, input.allocation);
+          const shareRow = explicit.allocations.find((row) => row.component === "SHARE");
+          if (input.shareSplit && shareRow && !isZero(shareRow.amount)) {
+            assertShareSplit(shareRow.amount, input.shareSplit, snapshot.shareLeft, snapshot.arrearsLeft);
+          }
+          return { ...explicit, unapplied: "0.00" };
+        })()
       : allocateReceipt(
           input.amount,
           snapshot.dues,
@@ -1450,6 +1620,14 @@ export async function postPayment(
       if (Number.isInteger(n) && n > receiptSeq) receiptSeq = n;
     }
     const receiptNo = `${receiptPrefix}${String(receiptSeq + 1).padStart(4, "0")}`;
+    const receiptMetaNote = buildReceiptStorageNote({
+      statement: snapshot.statement,
+      paidBefore: snapshot.paid,
+      allocations: withExtra.allocations.map((row) => ({ component: row.component, amount: row.amount })),
+      shareSplit: input.shareSplit,
+      nextMonthPenalty: input.nextMonthPenalty,
+    });
+    const userNote = input.note?.trim() ?? "";
     const payment = await tx.payment.create({
       data: {
         societyId: auth.societyId,
@@ -1458,7 +1636,7 @@ export async function postPayment(
         receiptNo,
         amount: dec(money(input.amount).toFixed(2)),
         paidOn: utcDate(input.paidOn),
-        note: input.note ?? "",
+        note: userNote ? `${receiptMetaNote}\n${userNote}` : receiptMetaNote,
         reason: input.reason,
         idempotencyKey: input.idempotencyKey,
         createdById: auth.userId,
@@ -1474,7 +1652,12 @@ export async function postPayment(
     for (const row of withExtra.allocations) {
       if (isZero(row.amount)) continue;
       if (row.component === "SHARE") {
-        await applyShareCash(tx, auth.societyId, member.id, row.amount, "strict", auth.userId);
+        if (input.shareSplit && !isZero(row.amount)) {
+          assertShareSplit(row.amount, input.shareSplit, snapshot.shareLeft, snapshot.arrearsLeft);
+          await applyShareCashWithSplit(tx, auth.societyId, member.id, input.period, row.amount, input.shareSplit, auth.userId);
+        } else {
+          await applyShareCash(tx, auth.societyId, member.id, row.amount, "strict", auth.userId);
+        }
         await cashLedger(tx, auth, {
           memberId: member.id,
           date: input.paidOn,
@@ -2638,24 +2821,58 @@ async function openMonthCollectionGate(auth: AuthUser) {
     where: { societyId: auth.societyId, status: "OPEN" },
     orderBy: { period: "desc" },
   });
-  if (!open) return { period: null as string | null, openMonth: "", unpaid: [] as { name: string; totalDue: string }[] };
+  if (!open) {
+    return {
+      period: null as string | null,
+      openMonth: "",
+      unpaid: [] as { memberId: string; name: string; totalDue: string }[],
+    };
+  }
   const active = await prisma.member.findMany({
     where: { societyId: auth.societyId, status: "ACTIVE" },
     orderBy: { memberNumber: "asc" },
   });
-  const unpaid: { name: string; totalDue: string }[] = [];
+  const unpaid: { memberId: string; name: string; totalDue: string }[] = [];
   for (const member of active) {
     const settled = await openMonthCollectionSettled(auth.societyId, member.id, open.period);
     if (settled) continue;
     const due = await duesFor(auth.societyId, member.id, open.period);
-    unpaid.push({ name: member.name, totalDue: due.totalDue });
+    unpaid.push({ memberId: member.id, name: member.name, totalDue: due.totalDue });
   }
   return { period: open.period, openMonth: monthLabel(open.period), unpaid };
+}
+
+const zeroShareAllocation = [
+  { component: "SHARE" as const, amount: "0.00" },
+  { component: "CURRENT_INTEREST" as const, amount: "0.00" },
+  { component: "PREVIOUS_INTEREST" as const, amount: "0.00" },
+];
+
+/** Record a ₹0 receipt for every active member still missing one this open month. */
+export async function markMissingReceiptsForOpenMonth(auth: AuthUser) {
+  const gate = await openMonthCollectionGate(auth);
+  if (!gate.period) return;
+  for (const row of gate.unpaid) {
+    await postPayment(auth, {
+      memberId: row.memberId,
+      period: gate.period,
+      amount: "0.00",
+      paidOn: statementDateFor(gate.period),
+      reason: "Marked collected at ₹0",
+      idempotencyKey: `mark-collected-${row.memberId}-${gate.period}`,
+      allocation: zeroShareAllocation.map((line) => ({ ...line })),
+    });
+  }
 }
 
 function collectionGateMessage(gate: Awaited<ReturnType<typeof openMonthCollectionGate>>) {
   const list = gate.unpaid.map((row) => `${row.name} (${formatINR(row.totalDue)} due, no receipt yet)`).join(", ");
   return `Record a payment for every active member in ${gate.openMonth} before you distribute (₹0 is fine). Still needed: ${list}.`;
+}
+
+function closeMonthGateMessage(gate: Awaited<ReturnType<typeof openMonthCollectionGate>>) {
+  const list = gate.unpaid.map((row) => `${row.name} (${formatINR(row.totalDue)} due on books, no receipt yet)`).join(", ");
+  return `Record a payment for every active member in ${gate.openMonth} before you close the month (₹0 is fine). Still needed: ${list}.`;
 }
 
 export async function distributionPreview(auth: AuthUser, _period?: string) {
@@ -2985,6 +3202,7 @@ export async function previewClose(auth: AuthUser) {
       if (aUnpaid !== bUnpaid) return aUnpaid - bUnpaid;
       return a.number - b.number;
     });
+  const gate = await openMonthCollectionGate(auth);
   return {
     period: month.period,
     month: monthLabel(month.period),
@@ -3008,10 +3226,16 @@ export async function previewClose(auth: AuthUser) {
       money(stillDue).greaterThan(0) ? `Unpaid installments of ${stillDue} will carry into the next month as dues, not as a broken equation.` : null,
       money(remaining).greaterThan(0) ? `Collected interest of ${remaining} is still undistributed.` : null,
     ].filter(Boolean),
+    collectionsComplete: gate.unpaid.length === 0,
+    membersWithoutReceipt: gate.unpaid,
   };
 }
 
 export async function confirmClose(auth: AuthUser, reason: string) {
+  const gate = await openMonthCollectionGate(auth);
+  if (gate.unpaid.length > 0) {
+    throw new HttpError(409, closeMonthGateMessage(gate));
+  }
   const preview = await previewClose(auth);
   if (!preview.checks.ok) {
     throw new HttpError(422, "Financial reconciliation error", preview.checks);

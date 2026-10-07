@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./lib/auth";
 import { BooksRefreshProvider } from "./lib/books-refresh";
+import { ToastProvider } from "./lib/toast";
 import "./styles.css";
 
 // After mobile PDF viewers, back navigation can restore a blank bfcache snapshot.
@@ -16,7 +17,9 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <AuthProvider>
         <BooksRefreshProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </BooksRefreshProvider>
       </AuthProvider>
     </BrowserRouter>

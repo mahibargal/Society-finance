@@ -6,8 +6,9 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import { sendPaymentReceiptPdf } from "../lib/payment-receipt-pdf.js";
-import { paymentReceiptNoteLines } from "../services/payment-receipt-notes.js";
-import { columnLabel, sendReportPdf, totalsRow } from "../lib/pdf-report.js";
+import { paymentReceiptNoteLines, paymentReceiptPaidInFull } from "../services/payment-receipt-notes.js";
+import { collectedLinesFromPayment } from "../services/payment-receipt-presentation.js";
+import { columnLabel, monthSheetRowsForExport, sendReportPdf, totalsRow } from "../lib/pdf-report.js";
 import { z } from "zod";
 import * as XLSX from "xlsx";
 import { previewWorkedExample } from "../engine/finance.js";
@@ -584,6 +585,7 @@ api.post(
         collectPenaltyAmount: moneyString.optional(),
         nextMonthPenalty: moneyString.optional(),
         allocation: z.array(z.object({ component: z.enum(["SHARE", "PREVIOUS_INTEREST", "CURRENT_INTEREST", "PRINCIPAL", "PENALTY"]), amount: moneyString })).optional(),
+        shareSplit: z.object({ monthly: moneyString, arrear: moneyString }).optional(),
       })
       .parse(req.body);
     res.json(await previewPayment(authOf(req), body));
@@ -602,13 +604,14 @@ api.post(
         amount: moneyString,
         paidOn: dateString,
         reason: reasonString,
-        note: z.string().max(300).optional(),
+        note: z.string().max(2000).optional(),
         idempotencyKey: z.string().min(8).max(80),
         penalty: moneyString.optional(),
         collectPenalty: z.boolean().optional(),
         collectPenaltyAmount: moneyString.optional(),
         nextMonthPenalty: moneyString.optional(),
         allocation: z.array(z.object({ component: z.enum(["SHARE", "PREVIOUS_INTEREST", "CURRENT_INTEREST", "PRINCIPAL", "PENALTY"]), amount: moneyString })).optional(),
+        shareSplit: z.object({ monthly: moneyString, arrear: moneyString }).optional(),
       })
       .parse(req.body);
     res.status(201).json(await postPayment(authOf(req), body));
@@ -628,7 +631,7 @@ api.get(
     if (auth.role === "MEMBER" && payment.memberId !== auth.memberId) {
       throw new HttpError(403, "You can only download your own receipts");
     }
-    const noteLines = await paymentReceiptNoteLines({
+    const receiptPayment = {
       id: payment.id,
       societyId: payment.societyId,
       memberId: payment.memberId,
@@ -637,7 +640,9 @@ api.get(
       createdAt: payment.createdAt,
       reason: payment.reason,
       note: payment.note ?? "",
-    });
+    };
+    const noteLines = await paymentReceiptNoteLines(receiptPayment);
+    const paidInFull = await paymentReceiptPaidInFull(receiptPayment);
     sendPaymentReceiptPdf(res, {
       societyName: payment.society.name,
       societyAddress: payment.society.address,
@@ -653,7 +658,11 @@ api.get(
       reason: payment.reason,
       note: payment.note ?? "",
       noteLines,
-      allocations: payment.allocations.map((row) => ({ component: row.component, amount: str(row.amount) })),
+      collectedLines: collectedLinesFromPayment(
+        payment.note ?? "",
+        payment.allocations.map((row) => ({ component: row.component, amount: str(row.amount) })),
+      ),
+      paidInFull,
     });
   }),
 );
@@ -829,6 +838,11 @@ function loansGivenForExport(reportType: string, sheet: MonthReportPayload) {
   return rows.length > 0 ? rows : undefined;
 }
 
+function monthReportExportRows(reportType: string, rows: Record<string, unknown>[]) {
+  if (reportType === "month-sheet") return monthSheetRowsForExport(rows);
+  return rows;
+}
+
 const REPORT_TITLES: Record<string, string> = {
   "month-sheet": "Month sheet to collect",
   "month-collected": "Month sheet collected",
@@ -878,7 +892,11 @@ api.get("/reports/:type", requireAuth, asyncRoute(async (req, res) => {
       const sheet = rows as MonthReportPayload;
       const month = sheet.month ? ` — ${sheet.month}` : "";
       const title = REPORT_TITLES[type] ?? "Month sheet";
-      XLSX.utils.book_append_sheet(book, excelSheet(societyName, `${title}${month}`, sheet.rows), title.slice(0, 31));
+      XLSX.utils.book_append_sheet(
+        book,
+        excelSheet(societyName, `${title}${month}`, monthReportExportRows(type, sheet.rows)),
+        title.slice(0, 31),
+      );
       const loansGiven = loansGivenForExport(type, sheet);
       if (loansGiven) {
         XLSX.utils.book_append_sheet(
@@ -901,7 +919,7 @@ api.get("/reports/:type", requireAuth, asyncRoute(async (req, res) => {
       const sheet = rows as MonthReportPayload & { month: string };
       const title = REPORT_TITLES[type] ?? "Month sheet";
       const loansGiven = loansGivenForExport(type, sheet);
-      sendReportPdf(res, `${title} — ${sheet.month}`, sheet.rows, {
+      sendReportPdf(res, `${title} — ${sheet.month}`, monthReportExportRows(type, sheet.rows), {
         heading: loansGiven ? `Loans given in ${sheet.month}` : undefined,
         rows: loansGiven,
         fileName,

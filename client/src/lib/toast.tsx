@@ -1,0 +1,53 @@
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+
+type ToastTone = "success" | "error";
+
+type ToastItem = { id: number; message: string; tone: ToastTone };
+
+const ToastContext = createContext<(message: string, tone?: ToastTone) => void>(() => undefined);
+
+const DISMISS_MS = 4500;
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const showToast = useCallback((message: string, tone: ToastTone = "success") => {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev.slice(-2), { id, message: trimmed, tone }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((row) => row.id !== id));
+    }, DISMISS_MS);
+  }, []);
+
+  const value = useMemo(() => showToast, [showToast]);
+
+  return (
+    <ToastContext.Provider value={value}>
+      {children}
+      <div
+        className="pointer-events-none fixed inset-x-0 z-[100] flex flex-col items-center gap-2 px-4 bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-8"
+        aria-live="polite"
+      >
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            role="status"
+            className={`max-w-md rounded-2xl border px-4 py-3 text-center text-sm font-medium shadow-[0_12px_40px_rgba(15,23,42,0.12)] ${
+              toast.tone === "success"
+                ? "border-moss/30 bg-white text-moss"
+                : "border-clay/30 bg-white text-clay"
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+export function useToast() {
+  return useContext(ToastContext);
+}

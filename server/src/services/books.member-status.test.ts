@@ -11,6 +11,7 @@ import {
   activateMember,
   addPenalty,
   confirmClose,
+  markMissingReceiptsForOpenMonth,
   confirmDistribution,
   createLoan,
   createMember,
@@ -974,6 +975,7 @@ describe("remove mistaken payment", () => {
     expect(sameMonth.dues.PRINCIPAL).toBe("100.00");
     expect(listed.find((row) => row.id === member.id)?.principalDue).toBe("100.00");
     expect(listed.find((row) => row.id === member.id)?.scheduledPrincipal).toBe("100.00");
+    await markMissingReceiptsForOpenMonth(auth);
     await confirmClose(auth, "Close after schedule change");
     const third = nextPeriod(second);
     const nextMonth = await duesFor(society.id, member.id, third);
@@ -1039,6 +1041,19 @@ describe("remove mistaken payment", () => {
       paidOn: `${start}-08`,
       reason: "Paid share",
       idempotencyKey: `share-paid-${stamp}`,
+    });
+    await postPayment(auth, {
+      memberId: unpaid.id,
+      period: start,
+      amount: "0.00",
+      paidOn: `${start}-09`,
+      reason: "Marked collected at ₹0",
+      idempotencyKey: `share-unpaid-marked-${stamp}`,
+      allocation: [
+        { component: "SHARE", amount: "0.00" },
+        { component: "CURRENT_INTEREST", amount: "0.00" },
+        { component: "PREVIOUS_INTEREST", amount: "0.00" },
+      ],
     });
     const sheet = await monthSheet(auth, start);
     const paidRow = sheet.rows.find((row: { member: string }) => row.member === "Paid Share");

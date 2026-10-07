@@ -20,7 +20,7 @@ describe("payment receipt notes", () => {
       note: payment.note ?? "",
     });
     expect(lines.length).toBeGreaterThanOrEqual(3);
-    expect(lines.some((line) => line.includes("Next month penalty added"))).toBe(true);
-    expect(lines.some((line) => line.includes("Previous penalty remaining"))).toBe(true);
+    expect(lines.some((line) => line.includes("Pending / added next month"))).toBe(true);
+    expect(lines.some((line) => line.includes("Penalty still due"))).toBe(true);
   });
 });

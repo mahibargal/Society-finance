@@ -49,14 +49,30 @@ export const MONTHLY_COLLECTION_COLUMNS: [string, string][] = [
   ["principalRecovered", "Principal recovered"],
 ];
 
+function CollectionStatusBadge({ status }: { status: string }) {
+  if (status === "collected") {
+    return <span className="ml-2 rounded-full bg-moss/15 px-2 py-0.5 text-xs font-medium text-moss">Collected</span>;
+  }
+  if (status === "partial") {
+    return <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Partially collected</span>;
+  }
+  return null;
+}
+
 export function MonthSheetTable({
   rows,
   totals,
   columns,
+  onRowClick,
+  showCollectionStatus = false,
 }: {
   rows: Record<string, string>[];
   totals: Record<string, string>;
   columns: [string, string][];
+  /** When set, rows with memberId open collect (admin month to collect). */
+  onRowClick?: (row: Record<string, string>) => void;
+  /** Show Collected / Partially collected for the open month (month to collect). */
+  showCollectionStatus?: boolean;
 }) {
   if (rows.length === 0) {
     return <Empty title="No members found" body="This month has no member rows yet. Add members or import a register." />;
@@ -74,15 +90,38 @@ export function MonthSheetTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.number} className="border-t border-line">
-              <td className="p-2">{row.number}</td>
-              <td className="whitespace-nowrap p-2">{row.member}</td>
-              {columns.map(([key]) => (
-                <td key={key} className="whitespace-nowrap p-2 text-right">{formatINR(row[key] ?? "0.00")}</td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const collectionStatus = row.collectionStatus ?? "";
+            const clickable = Boolean(onRowClick && row.memberId);
+            const showCollectLink = clickable && collectionStatus !== "collected" && collectionStatus !== "partial";
+            return (
+              <tr
+                key={row.memberId ?? row.number}
+                className={`border-t border-line ${clickable ? "cursor-pointer transition hover:bg-paper-deep active:bg-paper" : ""}`}
+                onClick={clickable ? () => onRowClick!(row) : undefined}
+                onKeyDown={clickable ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onRowClick!(row);
+                  }
+                } : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                role={clickable ? "button" : undefined}
+              >
+                <td className="p-2">{row.number}</td>
+                <td className="whitespace-nowrap p-2">
+                  {row.member}
+                  {showCollectionStatus && collectionStatus && (
+                    <CollectionStatusBadge status={collectionStatus} />
+                  )}
+                  {showCollectLink && <span className="ml-2 text-xs font-medium text-moss">Collect →</span>}
+                </td>
+                {columns.map(([key]) => (
+                  <td key={key} className="whitespace-nowrap p-2 text-right">{formatINR(row[key] ?? "0.00")}</td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-line font-semibold">

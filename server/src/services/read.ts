@@ -492,8 +492,14 @@ async function serializeMembers(auth: AuthUser, rows: Awaited<ReturnType<typeof 
       currentInterest: statement ? str(statement.currentInterest) : "0.00",
       shareDue: due?.shareLeft ?? "0.00",
       interestDue: due?.dues.CURRENT_INTEREST ?? "0.00",
+      previousSharePending: due?.arrearsLeft ?? "0.00",
+      previousInterestPending: due?.dues.PREVIOUS_INTEREST ?? "0.00",
       previousPending: due ? sumMoney([due.dues.PREVIOUS_INTEREST, due.arrearsLeft]) : "0.00",
       penaltyDue: due?.dues.PENALTY ?? "0.00",
+      installmentDue: statement ? statementInstallmentOnSheet(statement).total : "0.00",
+      installmentBreakdown: statement
+        ? statementInstallmentOnSheet(statement)
+        : { share: "0.00", previousInterest: "0.00", currentInterest: "0.00", principal: "0.00", total: "0.00" },
       totalDue: due?.totalDue ?? "0.00",
       principalDue: due?.dues.PRINCIPAL ?? "0.00",
       scheduledPrincipal: statement ? str(statement.principalDue) : "0.00",
@@ -953,32 +959,65 @@ async function loadMonthSheetBundle(auth: AuthUser, period?: string, options?: M
   };
 }
 
-function installmentDueColumns(row: MonthSheetBundle["statements"][number]) {
-  const shareDue = shareDueOnBooks(str(row.shareCashPending), str(row.arrearsCash));
-  const share = shareOnSheet(str(row.monthlyShare), shareDue);
-  const installment = sheetInstallmentTotal(str(row.totalInstallment), str(row.monthlyShare), shareDue);
+function statementInstallmentOnSheet(statement: {
+  shareCashPending: Prisma.Decimal;
+  arrearsCash: Prisma.Decimal;
+  monthlyShare: Prisma.Decimal;
+  totalInstallment: Prisma.Decimal;
+  previousInterest: Prisma.Decimal;
+  currentInterest: Prisma.Decimal;
+  principalDue: Prisma.Decimal;
+  penalty: Prisma.Decimal;
+}) {
+  const shareDue = shareDueOnBooks(str(statement.shareCashPending), str(statement.arrearsCash));
+  const share = shareOnSheet(str(statement.monthlyShare), shareDue);
+  const penalty = str(statement.penalty);
   return {
-    monthlyShare: share,
-    previousInterest: str(row.previousInterest),
-    currentInterest: str(row.currentInterest),
-    principal: str(row.principalDue),
-    penalty: str(row.penalty),
-    total: installment,
+    share,
+    previousInterest: str(statement.previousInterest),
+    currentInterest: str(statement.currentInterest),
+    principal: str(statement.principalDue),
+    penalty,
+    total: sheetInstallmentTotal(str(statement.totalInstallment), str(statement.monthlyShare), shareDue),
   };
 }
 
-function paidByMember(payments: MonthSheetBundle["payments"]) {
-  const empty = () => ({
+function installmentDueColumns(row: MonthSheetBundle["statements"][number]) {
+  const due = statementInstallmentOnSheet(row);
+  return {
+    monthlyShare: due.share,
+    previousInterest: due.previousInterest,
+    currentInterest: due.currentInterest,
+    principal: due.principal,
+    penalty: str(row.penalty),
+    total: due.total,
+  };
+}
+
+type MemberPaidTotals = {
+  sharePaid: string;
+  previousInterestPaid: string;
+  currentInterestPaid: string;
+  principalPaid: string;
+  penaltyPaid: string;
+  totalReceived: string;
+};
+
+function emptyMemberPaidTotals(): MemberPaidTotals {
+  return {
     sharePaid: "0.00",
     previousInterestPaid: "0.00",
     currentInterestPaid: "0.00",
     principalPaid: "0.00",
     penaltyPaid: "0.00",
     totalReceived: "0.00",
-  });
-  const map = new Map<string, ReturnType<typeof empty>>();
+  };
+}
+
+function paidByMember(payments: MonthSheetBundle["payments"]) {
+  const map = new Map<string, MemberPaidTotals>();
   for (const payment of payments) {
-    const current = map.get(payment.memberId) ?? empty();
+    const current = map.get(payment.memberId) ?? emptyMemberPaidTotals();
     for (const row of payment.allocations) {
       const amount = str(row.amount);
       if (row.component === "SHARE") current.sharePaid = sumMoney([current.sharePaid, amount]);
@@ -991,6 +1030,45 @@ function paidByMember(payments: MonthSheetBundle["payments"]) {
     map.set(payment.memberId, current);
   }
   return map;
+}
+
+export type MonthCollectionStatus = "pending" | "collected" | "partial";
+
+function remainingDueOnStatement(
+  row: MonthSheetBundle["statements"][number],
+  paid: MemberPaidTotals,
+): string {
+  const arrears = str(row.arrearsCash);
+  const sharePaid = paid.sharePaid;
+  const arrearsLeft = money(sharePaid).greaterThanOrEqualTo(arrears) ? "0.00" : subtractMoney(arrears, sharePaid);
+  const paidTowardShare = money(sharePaid).greaterThan(arrears) ? subtractMoney(sharePaid, arrears) : "0.00";
+  const shareLeftRaw = subtractMoney(str(row.shareCashPending), paidTowardShare);
+  const shareLeft = money(shareLeftRaw).isNegative() ? "0.00" : shareLeftRaw;
+  const parts = [
+    sumMoney([shareLeft, arrearsLeft]),
+    subtractMoney(str(row.previousInterest), paid.previousInterestPaid),
+    subtractMoney(str(row.currentInterest), paid.currentInterestPaid),
+    subtractMoney(str(row.principalDue), paid.principalPaid),
+    subtractMoney(str(row.penalty), paid.penaltyPaid),
+  ].map((value) => (money(value).isNegative() ? "0.00" : value));
+  return sumMoney(parts);
+}
+
+export function monthCollectionStatusForRow(
+  row: MonthSheetBundle["statements"][number],
+  payments: MonthSheetBundle["payments"],
+  paidMap: Map<string, MemberPaidTotals>,
+): MonthCollectionStatus {
+  const hasReceipt = payments.some((payment) => payment.memberId === row.memberId);
+  if (!hasReceipt) return "pending";
+  const paid = paidMap.get(row.memberId) ?? emptyMemberPaidTotals();
+  return money(remainingDueOnStatement(row, paid)).greaterThan(0) ? "partial" : "collected";
+}
+
+export function monthCollectionStatusLabel(status: MonthCollectionStatus) {
+  if (status === "collected") return "Collected";
+  if (status === "partial") return "Partially collected";
+  return "To collect";
 }
 
 /** Per-month pool-to-shares credits for one member (DIST- share lines). */
@@ -1030,15 +1108,30 @@ export async function monthSheet(auth: AuthUser, period?: string, options?: Mont
   const bundle = await loadMonthSheetBundle(auth, period, options);
   const memberIds = bundle.statements.map((row) => row.memberId);
   const poolShareByMember = await poolShareDistributedByMember(auth.societyId, bundle.period, memberIds);
+  const openMonth = await prisma.accountingMonth.findFirst({
+    where: { societyId: auth.societyId, status: "OPEN" },
+    orderBy: { period: "desc" },
+  });
+  const liveOpenSheet = openMonth?.period === bundle.period && !options?.snapshot;
+  const paidMap = paidByMember(bundle.payments);
+  const paidMemberIds = liveOpenSheet ? new Set(bundle.payments.map((payment) => payment.memberId)) : null;
   const rows = bundle.statements.map((row) => {
     const due = installmentDueColumns(row);
+    const collectionStatus = liveOpenSheet
+      ? monthCollectionStatusForRow(row, bundle.payments, paidMap)
+      : undefined;
     return {
       number: row.member.memberNumber,
+      memberId: row.memberId,
       member: row.member.name,
       shares: sheetSharesColumn(row),
       poolShareDistributed: poolShareByMember.get(row.memberId) ?? "0.00",
       loan: sheetLoanColumn(row),
       ...due,
+      ...(paidMemberIds ? { collectedThisOpenMonth: paidMemberIds.has(row.memberId) } : {}),
+      ...(collectionStatus
+        ? { collectionStatus, collectionStatusLabel: monthCollectionStatusLabel(collectionStatus) }
+        : {}),
     };
   });
   return {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarCheck, ChevronDown, FileText, Landmark, Receipt, Users, Wallet } from "lucide-react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { QuickTile } from "../components/home-links";
 import { MemberHistoryTable } from "../components/member-history";
 import { MonthCalendar } from "../components/month-calendar";
@@ -18,6 +18,12 @@ import { confirmMemberDistributionChange } from "../lib/member-distribution-warn
 import { mobileError, mobileInput, normalizeMobile } from "../lib/phone";
 import { clearImportDraft, loadImportDraft, saveImportDraft } from "../lib/import-draft";
 import { addMembersBlockedMessage, allowManualMembers, clearManualMembersChoice, manualMembersAllowed, registerNeedsSetup, showAddMember } from "../lib/register-setup";
+import {
+  collectPaymentReturnTo,
+  memberHasReceiptThisOpenMonth,
+  PAYMENT_ALREADY_COLLECTED_MESSAGE,
+} from "../lib/collect-payment";
+import { useToast } from "../lib/toast";
 import {
   fetchMemberCards,
   fetchOpenPeriod,
@@ -39,8 +45,19 @@ type MemberCard = {
   currentInterest: string;
   shareDue?: string;
   interestDue?: string;
+  previousSharePending?: string;
+  previousInterestPending?: string;
   previousPending?: string;
   penaltyDue?: string;
+  installmentDue?: string;
+  installmentBreakdown?: {
+    share: string;
+    previousInterest: string;
+    currentInterest: string;
+    principal: string;
+    penalty?: string;
+    total: string;
+  };
   principalDue: string;
   scheduledPrincipal?: string;
   totalDue: string;
@@ -259,6 +276,7 @@ export function AdminHome() {
 
 export function AdminMembers() {
   const booksVersion = useBooksVersion();
+  const bumpBooks = useBumpBooks();
   const [members, setMembers] = useState<MemberCard[] | null>(null);
   const [query, setQuery] = useState("");
   const [params] = useSearchParams();
@@ -430,7 +448,7 @@ export function AdminMembers() {
             setForm(blankMember());
             setError("");
             setOpen(false);
-            await load();
+            bumpBooks();
           } catch (err) { setError(err instanceof Error ? err.message : "Could not add member"); }
         }}>
           <Field label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -483,7 +501,15 @@ export function AdminMember() {
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-muted">
             {Object.entries(data.due.dues as Record<string, string>).map(([key, value]) => <span key={key}>{key.replaceAll("_", " ").toLowerCase()} {formatINR(value)}</span>)}
           </div>
-          <Link to={`/app/pay?member=${data.member.id}`} className="mt-4 block"><Button full>Collect payment</Button></Link>
+          {memberHasReceiptThisOpenMonth({
+            collectedThisOpenMonth: data.payments?.some(
+              (p: { period: string; status?: string }) => p.period === data.openPeriod && p.status === "RECORDED",
+            ),
+          }) ? (
+            <p className="mt-4 text-sm text-muted">{PAYMENT_ALREADY_COLLECTED_MESSAGE}</p>
+          ) : (
+            <Link to={`/app/pay?member=${data.member.id}`} className="mt-4 block"><Button full>Collect payment</Button></Link>
+          )}
         </Card>
       )}
       <Card>
@@ -586,6 +612,7 @@ function MemberStatus({
 }
 
 function MemberLogin({ memberId, current, onSaved }: { memberId: string; current: string; onSaved: () => void }) {
+  const bumpBooks = useBumpBooks();
   const [username, setUsername] = useState(current);
   const [password, setPassword] = useState("");
   const [reason, setReason] = useState("Login issued by the society admin");
@@ -604,6 +631,7 @@ function MemberLogin({ memberId, current, onSaved }: { memberId: string; current
           await api(`/api/members/${memberId}/login`, { method: "POST", body: JSON.stringify({ username, password: password || undefined, reason }) });
           setPassword("");
           setMessage("Login saved. Share the username and password with the member.");
+          bumpBooks();
           onSaved();
         } catch (err) { setError(err instanceof Error ? err.message : "Could not save the login"); }
       }}>
@@ -830,15 +858,187 @@ function fromPaise(value: number) {
 function dueParts(member: MemberCard) {
   const share = member.shareDue ?? member.monthlyShare ?? "0.00";
   const interest = member.interestDue ?? member.currentInterest ?? "0.00";
-  const pending = member.previousPending ?? "0.00";
+  const previousShare = member.previousSharePending ?? "0.00";
+  const previousInterest = member.previousInterestPending ?? "0.00";
+  const pending =
+    member.previousPending ?? fromPaise(paise(previousShare) + paise(previousInterest));
   const penalty = member.penaltyDue ?? "0.00";
   const due = fromPaise(paise(share) + paise(interest) + paise(pending));
-  return { share, interest, pending, penalty, due };
+  const installmentDue = member.installmentDue ?? due;
+  const installmentBreakdown = member.installmentBreakdown ?? {
+    share: installmentDue,
+    previousInterest: "0.00",
+    currentInterest: "0.00",
+    principal: "0.00",
+    penalty: "0.00",
+    total: installmentDue,
+  };
+  const penaltyOnSheet = installmentBreakdown.penalty ?? penalty;
+  const installmentCollectDue = fromPaise(
+    paise(installmentBreakdown.share)
+      + paise(installmentBreakdown.previousInterest)
+      + paise(installmentBreakdown.currentInterest)
+      + paise(penaltyOnSheet),
+  );
+  const installmentWithPenalty = fromPaise(
+    paise(installmentCollectDue) + paise(installmentBreakdown.principal),
+  );
+  return {
+    share,
+    interest,
+    previousShare,
+    previousInterest,
+    pending,
+    penalty,
+    due,
+    installmentDue,
+    /** Share, carried interest, current interest, and penalty — excludes principal (collected on its own line). */
+    installmentCollectDue,
+    installmentWithPenalty,
+    installmentBreakdown: { ...installmentBreakdown, penalty: penaltyOnSheet },
+  };
+}
+
+function dueFieldInitial(value: string) {
+  return value === "0.00" ? "" : value;
+}
+
+function cappedPaymentInput(typed: string, maxDue: string) {
+  const payload = moneyPayload(typed) || "0.00";
+  return paise(payload) > paise(maxDue) ? maxDue : payload;
+}
+
+/** Keep typed digits but cap to max due once the amount is parseable. */
+function clampCollectTyping(typed: string, maxDue: string) {
+  const cleaned = typed.replace(/[^\d.]/g, "");
+  if (cleaned === "" || cleaned === ".") return cleaned;
+  const payload = moneyPayload(cleaned);
+  if (!payload) return cleaned;
+  if (paise(maxDue) === 0) return cleaned;
+  return paise(payload) > paise(maxDue) ? maxDue : cleaned;
+}
+
+function collectAmountOverLimit(typed: string, maxDue: string) {
+  if (paise(maxDue) === 0) return false;
+  const payload = moneyPayload(typed);
+  if (!payload) return false;
+  return paise(payload) > paise(maxDue);
+}
+
+function validateCollectPaymentInputs(
+  parts: ReturnType<typeof dueParts>,
+  member: MemberCard,
+  inputs: {
+    payShare: string;
+    payCurrentInterest: string;
+    payPreviousShare: string;
+    payPreviousInterest: string;
+    penaltyReceived: string;
+    principal: string;
+  },
+) {
+  const lines: [string, string, string][] = [
+    ["Monthly share", inputs.payShare, parts.share],
+    ["Interest on the loan", inputs.payCurrentInterest, parts.interest],
+    ["Pending share from last month", inputs.payPreviousShare, parts.previousShare],
+    ["Penalty due", inputs.penaltyReceived, parts.penalty],
+    ["Pending interest from last month", inputs.payPreviousInterest, parts.previousInterest],
+  ];
+  for (const [label, typed, max] of lines) {
+    if (collectAmountOverLimit(typed, max)) {
+      return `${label} cannot be more than ${formatINR(max)} due.`;
+    }
+  }
+  const principalMax = scheduledPrincipalFill(member);
+  if (collectAmountOverLimit(inputs.principal, principalMax)) {
+    const dueLabel =
+      paise(principalMax) < paise(member.loanOutstanding)
+        ? `${formatINR(principalMax)} due this month`
+        : `${formatINR(member.loanOutstanding)} remaining on the loan`;
+    return `Principal cannot be more than ${dueLabel}.`;
+  }
+  return null;
+}
+
+function fillCollectFields(member: MemberCard) {
+  const parts = dueParts(member);
+  return {
+    payShare: dueFieldInitial(parts.share),
+    payCurrentInterest: dueFieldInitial(parts.interest),
+    payPreviousShare: dueFieldInitial(parts.previousShare),
+    payPreviousInterest: dueFieldInitial(parts.previousInterest),
+    payPenalty: dueFieldInitial(parts.penalty),
+  };
+}
+
+function buildCollectAllocation(
+  parts: ReturnType<typeof dueParts>,
+  payShare: string,
+  payCurrentInterest: string,
+  payPreviousShare: string,
+  payPreviousInterest: string,
+  principalAmount: string,
+  receiveAmount: string,
+) {
+  const shareMonthly = cappedPaymentInput(payShare, parts.share);
+  const shareArrear = cappedPaymentInput(payPreviousShare, parts.previousShare);
+  const shareCombined = fromPaise(paise(shareMonthly) + paise(shareArrear));
+  const currentInterest = cappedPaymentInput(payCurrentInterest, parts.interest);
+  const previousInterest = cappedPaymentInput(payPreviousInterest, parts.previousInterest);
+  const allocation = [
+    { component: "SHARE", amount: shareCombined },
+    { component: "CURRENT_INTEREST", amount: currentInterest },
+    { component: "PREVIOUS_INTEREST", amount: previousInterest },
+  ];
+  if (paise(principalAmount) > 0) allocation.push({ component: "PRINCIPAL", amount: principalAmount });
+  if (paise(receiveAmount) > 0) allocation.push({ component: "PENALTY", amount: receiveAmount });
+  const amount = fromPaise(allocation.reduce((sum, row) => sum + paise(row.amount), 0));
+  const shareSplit = paise(shareCombined) > 0 ? { monthly: shareMonthly, arrear: shareArrear } : undefined;
+  const breakdown = [
+    { label: "Monthly share", amount: shareMonthly },
+    { label: "Interest on the loan", amount: currentInterest },
+    { label: "Pending share from last month", amount: shareArrear },
+    { label: "Pending interest from last month", amount: previousInterest },
+    ...(paise(principalAmount) > 0 ? [{ label: "Principal repaid", amount: principalAmount }] : []),
+    ...(paise(receiveAmount) > 0 ? [{ label: "Penalty due", amount: receiveAmount }] : []),
+  ];
+  return { amount, allocation, shareSplit, breakdown };
 }
 
 function scheduledPrincipalFill(member: MemberCard) {
   const dueThisMonth = member.principalDue ?? member.scheduledPrincipal ?? "0.00";
   return fromPaise(Math.min(paise(dueThisMonth), paise(member.loanOutstanding)));
+}
+
+function CollectDueField({
+  due,
+  disabledMessage,
+  value,
+  onChange,
+}: {
+  due: string;
+  disabledMessage: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const locked = paise(due) === 0;
+  const over = !locked && collectAmountOverLimit(value, due);
+  return (
+    <div>
+      <Field
+        value={locked ? "0.00" : value}
+        onChange={locked ? () => undefined : (next) => onChange(clampCollectTyping(next, due))}
+        inputMode="decimal"
+        selectOnFocus
+        placeholder="0.00"
+        disabled={locked}
+      />
+      {locked && <p className="mt-1 text-xs text-muted">{disabledMessage}</p>}
+      {over && (
+        <p className="mt-1 text-xs text-clay">Cannot be more than {formatINR(due)} due.</p>
+      )}
+    </div>
+  );
 }
 
 /** Still on the collect list: no receipt recorded for the open month yet. */
@@ -848,27 +1048,33 @@ function awaitingCollect(member: MemberCard, alsoCollected: Set<string>) {
 }
 
 export function AdminPay() {
+  const showToast = useToast();
   const booksVersion = useBooksVersion();
   const bumpBooks = useBumpBooks();
   const [params] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [members, setMembers] = useState<MemberCard[] | null>(null);
   const [memberId, setMemberId] = useState(params.get("member") ?? "");
-  const [paying, setPaying] = useState("");
+  const [payShare, setPayShare] = useState("");
+  const [payCurrentInterest, setPayCurrentInterest] = useState("");
+  const [payPreviousShare, setPayPreviousShare] = useState("");
+  const [payPreviousInterest, setPayPreviousInterest] = useState("");
   const [principal, setPrincipal] = useState("");
   const [reason, setReason] = useState("Monthly meeting collection");
   const [preview, setPreview] = useState<any>(null);
+  const [previewBreakdown, setPreviewBreakdown] = useState<{ label: string; amount: string }[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [penalty, setPenalty] = useState(params.get("penalty") === "1");
   const [penaltyAmount, setPenaltyAmount] = useState("100.00");
-  const [receivePenalty, setReceivePenalty] = useState(false);
   const [penaltyReceived, setPenaltyReceived] = useState("");
   const [nextMonthPenalty, setNextMonthPenalty] = useState(false);
   const [nextMonthPenaltyAmount, setNextMonthPenaltyAmount] = useState("100.00");
   const [useScheduledPrincipal, setUseScheduledPrincipal] = useState(false);
+  const [showInstallmentBreakdown, setShowInstallmentBreakdown] = useState(false);
   const [query, setQuery] = useState("");
   /** Hide immediately after Confirm, before members refetch. */
   const [collectedNow, setCollectedNow] = useState<Set<string>>(() => new Set());
@@ -895,15 +1101,38 @@ export function AdminPay() {
     return true;
   });
   const parts = member ? dueParts(member) : null;
-  const payingAmount = paying.trim() === "" ? "0.00" : moneyPayload(paying) || "0.00";
-  const principalAmount = member && paise(member.loanOutstanding) > 0 && principal.trim() !== "" ? moneyPayload(principal) : "0.00";
-  const receiveAmount = receivePenalty && parts && paise(parts.penalty) > 0
-    ? (() => {
-      const typed = penaltyReceived.trim() === "" ? parts.penalty : moneyPayload(penaltyReceived) || "0.00";
-      return paise(typed) > paise(parts.penalty) ? parts.penalty : typed;
-    })()
+  const payingAmount = fromPaise(
+    paise(cappedPaymentInput(payShare, parts?.share ?? "0.00"))
+      + paise(cappedPaymentInput(payCurrentInterest, parts?.interest ?? "0.00"))
+      + paise(cappedPaymentInput(payPreviousShare, parts?.previousShare ?? "0.00"))
+      + paise(cappedPaymentInput(payPreviousInterest, parts?.previousInterest ?? "0.00")),
+  );
+  const principalCap = member ? scheduledPrincipalFill(member) : "0.00";
+  const principalAmount =
+    member && paise(member.loanOutstanding) > 0 && principal.trim() !== ""
+      ? cappedPaymentInput(principal, principalCap)
+      : "0.00";
+  const collectInputError = useMemo(
+    () =>
+      member && parts
+        ? validateCollectPaymentInputs(parts, member, {
+            payShare,
+            payCurrentInterest,
+            payPreviousShare,
+            payPreviousInterest,
+            penaltyReceived,
+            principal,
+          })
+        : null,
+    [member, parts, payShare, payCurrentInterest, payPreviousShare, payPreviousInterest, penaltyReceived, principal],
+  );
+  const receiveAmount = parts && paise(parts.penalty) > 0
+    ? cappedPaymentInput(penaltyReceived, parts.penalty)
     : "0.00";
-  const carry = parts ? fromPaise(Math.max(0, paise(parts.due) - paise(payingAmount))) : "0.00";
+  const installmentPayingToday = fromPaise(paise(payingAmount) + paise(receiveAmount));
+  const carry = parts
+    ? fromPaise(Math.max(0, paise(parts.installmentCollectDue) - paise(installmentPayingToday)))
+    : "0.00";
   const unpaidPrincipal = member
     ? fromPaise(Math.max(0, paise(member.principalDue) - paise(principalAmount || "0.00")))
     : "0.00";
@@ -914,16 +1143,20 @@ export function AdminPay() {
   useEffect(() => {
     if (!member || amountFor.current === member.id) return;
     amountFor.current = member.id;
-    const due = dueParts(member).due;
-    setPaying(due === "0.00" ? "" : due);
+    const filled = fillCollectFields(member);
+    setPayShare(filled.payShare);
+    setPayCurrentInterest(filled.payCurrentInterest);
+    setPayPreviousShare(filled.payPreviousShare);
+    setPayPreviousInterest(filled.payPreviousInterest);
+    setPenaltyReceived(filled.payPenalty);
     setPrincipal("");
     setUseScheduledPrincipal(false);
-    setReceivePenalty(false);
-    setPenaltyReceived("");
     setNextMonthPenalty(false);
     setNextMonthPenaltyAmount("100.00");
     setPreview(null);
+    setPreviewBreakdown([]);
     setNotice("");
+    setShowInstallmentBreakdown(false);
   }, [member]);
   const [period, setPeriod] = useState("");
   useEffect(() => { fetchOpenPeriod(booksVersion).then((row) => setPeriod(row.period)).catch(() => undefined); }, [booksVersion]);
@@ -950,7 +1183,7 @@ export function AdminPay() {
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-moss bg-white px-4 py-3">
           <div>
             <div className="font-medium">{member.name}</div>
-            <div className="text-sm text-muted">Due {formatINR(dueParts(member).due)}</div>
+            <div className="text-sm text-muted">Installment {formatINR(dueParts(member).installmentWithPenalty)}</div>
           </div>
           <button type="button" className="min-h-10 shrink-0 rounded-2xl border border-line px-3 text-sm font-semibold" onClick={() => { setMemberId(""); setQuery(""); setPreview(null); setNotice(""); setError(""); }}>Change</button>
         </div>
@@ -960,9 +1193,21 @@ export function AdminPay() {
           <div className="grid max-h-72 gap-2 overflow-auto">
             {members === null && <ListSkeleton count={4} />}
             {shortlist.map((row) => (
-              <button key={row.id} type="button" onClick={() => { setMemberId(row.id); setPaying(dueParts(row).due === "0.00" ? "" : dueParts(row).due); setPrincipal(""); setUseScheduledPrincipal(false); setReceivePenalty(false); setNextMonthPenalty(false); setPreview(null); }} className="rounded-2xl border border-line bg-card px-4 py-3 text-left">
+              <button key={row.id} type="button" onClick={() => {
+                const filled = fillCollectFields(row);
+                setMemberId(row.id);
+                setPayShare(filled.payShare);
+                setPayCurrentInterest(filled.payCurrentInterest);
+                setPayPreviousShare(filled.payPreviousShare);
+                setPayPreviousInterest(filled.payPreviousInterest);
+                setPenaltyReceived(filled.payPenalty);
+                setPrincipal("");
+                setUseScheduledPrincipal(false);
+                setNextMonthPenalty(false);
+                setPreview(null);
+              }} className="rounded-2xl border border-line bg-card px-4 py-3 text-left">
                 <div className="font-medium">{row.name}</div>
-                <div className="text-sm text-muted">Due {formatINR(dueParts(row).due)}</div>
+                <div className="text-sm text-muted">Installment {formatINR(dueParts(row).installmentWithPenalty)}</div>
               </button>
             ))}
             {members && shortlist.length === 0 && (
@@ -971,7 +1216,7 @@ export function AdminPay() {
                 body={
                   penalty || search
                     ? "No active member matches that name."
-                    : "Every active member already has a receipt this month. Open Payments to review, or collect again from the member page."
+                    : PAYMENT_ALREADY_COLLECTED_MESSAGE
                 }
               />
             )}
@@ -979,122 +1224,171 @@ export function AdminPay() {
         </div>
       )}
       {member && member.status !== "ACTIVE" && <Card><p>This member has left the society, so there is no installment to collect this month.</p></Card>}
-      {member && member.status === "ACTIVE" && !penalty && (
+      {member && member.status === "ACTIVE" && !penalty && memberHasReceiptThisOpenMonth(member) && (
+        <Card><p className="text-sm text-muted">{PAYMENT_ALREADY_COLLECTED_MESSAGE}</p></Card>
+      )}
+      {member && member.status === "ACTIVE" && !penalty && !memberHasReceiptThisOpenMonth(member) && (
         <Card>
           {parts && (
-            <div className="grid gap-3">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-sm text-muted">Monthly share</div>
-                  <div className="text-xs text-muted">{paise(parts.share) === 0 && paise(member.monthlyShare) > 0 ? `${formatINR(member.monthlyShare)} already collected this month` : `${rupeesInWords(member.monthlyShare)} each month`}</div>
+            <div className="grid gap-4">
+              <div className="rounded-2xl border border-moss/25 bg-moss/5 px-4 py-3">
+                <div className="text-sm font-medium text-moss">Installment to collect</div>
+                <div className="num mt-1 text-3xl font-semibold">{formatINR(parts.installmentWithPenalty)}</div>
+                <div className="text-sm text-muted">{rupeesInWords(parts.installmentWithPenalty)}</div>
+                <button
+                  type="button"
+                  onClick={() => setShowInstallmentBreakdown((open) => !open)}
+                  className="mt-2 flex min-h-10 w-full items-center justify-between gap-2 rounded-xl border border-moss/20 bg-white/60 px-3 text-left text-sm font-medium text-moss"
+                >
+                  <span>{showInstallmentBreakdown ? "Hide breakdown" : "Show breakdown"}</span>
+                  <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${showInstallmentBreakdown ? "rotate-180" : ""}`} aria-hidden />
+                </button>
+                {showInstallmentBreakdown && (
+                  <div className="mt-3 grid gap-1.5 border-t border-moss/15 pt-3 text-sm">
+                    {(
+                      [
+                        ["Share", parts.installmentBreakdown.share],
+                        ["Prev. interest", parts.installmentBreakdown.previousInterest],
+                        ["Interest", parts.installmentBreakdown.currentInterest],
+                        ["Principal", parts.installmentBreakdown.principal],
+                        ...(paise(parts.installmentBreakdown.penalty ?? "0.00") > 0
+                          ? ([["Penalty", parts.installmentBreakdown.penalty ?? parts.penalty]] as const)
+                          : []),
+                      ] as const
+                    ).map(([label, amount]) => (
+                      <div key={label} className="flex items-baseline justify-between gap-3">
+                        <span className="text-muted">{label}</span>
+                        <span className="num shrink-0 font-medium">{formatINR(amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="grid gap-3 rounded-2xl bg-paper p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Monthly share</div>
+                    <div className="text-xs text-muted">
+                      {paise(parts.share) === 0 && paise(member.monthlyShare) > 0
+                        ? `${formatINR(member.monthlyShare)} already collected this month`
+                        : `Due ${formatINR(parts.share)} · ${rupeesInWords(parts.share).toLowerCase()}`}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="num text-lg">{formatINR(parts.share)}</div>
-                  <div className="text-xs text-muted">{rupeesInWords(parts.share)} still to collect</div>
-                </div>
+                <CollectDueField
+                  due={parts.share}
+                  disabledMessage={
+                    paise(member.monthlyShare) > 0
+                      ? "Nothing due — monthly share already collected this month."
+                      : "Nothing due — no monthly share on the books for this line."
+                  }
+                  value={payShare}
+                  onChange={(value) => { setPayShare(value); setPreview(null); setNotice(""); }}
+                />
               </div>
               {paise(member.loanOutstanding) > 0 && (
-                <div className="flex items-start justify-between gap-4">
+                <div className="grid gap-3 rounded-2xl bg-paper p-3">
                   <div>
-                    <div className="text-sm text-muted">Interest on the loan</div>
-                    <div className="text-xs text-muted">This month, on {formatINR(member.loanOutstanding)} outstanding</div>
+                    <div className="text-sm font-medium">Interest on the loan</div>
+                    <div className="text-xs text-muted">Due {formatINR(parts.interest)} this month on {formatINR(member.loanOutstanding)} outstanding</div>
                   </div>
-                  <div className="text-right">
-                    <div className="num text-lg">{formatINR(parts.interest)}</div>
-                    <div className="text-xs text-muted">{rupeesInWords(parts.interest)}</div>
-                  </div>
+                  <CollectDueField
+                    due={parts.interest}
+                    disabledMessage="Nothing due — no loan interest due this month."
+                    value={payCurrentInterest}
+                    onChange={(value) => { setPayCurrentInterest(value); setPreview(null); setNotice(""); }}
+                  />
                 </div>
               )}
-              <div className="flex items-start justify-between gap-4">
+              <div className="grid gap-3 rounded-2xl bg-paper p-3">
                 <div>
-                  <div className="text-sm text-muted">Pending from last month</div>
-                  <div className="text-xs text-muted">Unpaid share or interest from last month</div>
+                  <div className="text-sm font-medium">Pending share from last month</div>
+                  <div className="text-xs text-muted">Due {formatINR(parts.previousShare)} · unpaid monthly share carried forward</div>
                 </div>
-                <div className="text-right">
-                  <div className="num text-lg">{formatINR(parts.pending)}</div>
-                  <div className="text-xs text-muted">{rupeesInWords(parts.pending)}</div>
-                </div>
+                <CollectDueField
+                  due={parts.previousShare}
+                  disabledMessage="Nothing due — no unpaid share carried from last month."
+                  value={payPreviousShare}
+                  onChange={(value) => { setPayPreviousShare(value); setPreview(null); setNotice(""); }}
+                />
               </div>
               {paise(parts.penalty) > 0 && (
-                <div className="flex items-start justify-between gap-4">
+                <div className="grid gap-3 rounded-2xl bg-paper p-3">
                   <div>
-                    <div className="text-sm text-muted">Penalty due</div>
-                    <div className="text-xs text-muted">Unpaid penalty plus any next-month fee added last time. What is not received stays due next month.</div>
+                    <div className="text-sm font-medium">Penalty due</div>
+                    <div className="text-xs text-muted">
+                      Due {formatINR(parts.penalty)} · penalty added on unpaid amount from last month
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="num text-lg">{formatINR(parts.penalty)}</div>
-                    <div className="text-xs text-muted">{rupeesInWords(parts.penalty)}</div>
-                  </div>
+                  <CollectDueField
+                    due={parts.penalty}
+                    disabledMessage="Nothing due — no penalty this month."
+                    value={penaltyReceived}
+                    onChange={(value) => { setPenaltyReceived(value); setPreview(null); setNotice(""); }}
+                  />
                 </div>
               )}
-              <div className="border-t border-line pt-3">
-                <Field label="Due now" value={paying} onChange={(value) => { setPaying(value.replace(/[^\d.]/g, "")); setPreview(null); setNotice(""); }} inputMode="decimal" selectOnFocus placeholder="0.00" />
-                <p className="mt-1 text-sm text-muted">Full due is {formatINR(parts.due)}, {rupeesInWords(parts.due).toLowerCase()}. Type 0 to record a ₹0 receipt. {paise(carry) > 0 ? `${formatINR(carry)}, ${rupeesInWords(carry).toLowerCase()}, will be added next month.` : "The full due is being paid."}</p>
+              <div className="grid gap-3 rounded-2xl bg-paper p-3">
+                <div>
+                  <div className="text-sm font-medium">Pending interest from last month</div>
+                  <div className="text-xs text-muted">Due {formatINR(parts.previousInterest)} · unpaid loan interest carried forward</div>
+                </div>
+                <CollectDueField
+                  due={parts.previousInterest}
+                  disabledMessage="Nothing due — no unpaid loan interest carried from last month."
+                  value={payPreviousInterest}
+                  onChange={(value) => { setPayPreviousInterest(value); setPreview(null); setNotice(""); }}
+                />
+              </div>
+              {paise(member.loanOutstanding) > 0 && paise(scheduledPrincipalFill(member)) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !useScheduledPrincipal;
+                    setUseScheduledPrincipal(next);
+                    setPrincipal(next ? scheduledPrincipalFill(member) : "");
+                    setPreview(null);
+                  }}
+                  className={`flex min-h-14 items-start justify-between gap-4 rounded-2xl border px-4 py-3 text-left ${useScheduledPrincipal ? "border-moss bg-white" : "border-line bg-paper"}`}
+                >
+                  <div>
+                    <div className="font-medium">Scheduled principal</div>
+                    <div className="text-xs text-muted">Fill {formatINR(scheduledPrincipalFill(member))}, this month's principal on the sheet. A new loan or a changed schedule starts next month. Leave unchecked to type any amount.</div>
+                  </div>
+                  <span className={`mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md border text-sm ${useScheduledPrincipal ? "border-moss bg-moss text-white" : "border-line bg-white text-transparent"}`}>✓</span>
+                </button>
+              )}
+              <div className="grid gap-3 rounded-2xl bg-paper p-3">
+                <div>
+                  <div className="text-sm font-medium">Principal to repay</div>
+                  <div className="text-xs text-muted">
+                    {paise(member.loanOutstanding) === 0
+                      ? "Due ₹0 · no loan"
+                      : paise(principalCap) === 0
+                        ? `Due ${formatINR(principalCap)} · ${formatINR(member.loanOutstanding)} loan outstanding`
+                        : `Due ${formatINR(principalCap)} · principal due this month on ${formatINR(member.loanOutstanding)} outstanding`}
+                  </div>
+                </div>
+                <CollectDueField
+                  due={paise(member.loanOutstanding) > 0 ? principalCap : "0.00"}
+                  disabledMessage={
+                    paise(member.loanOutstanding) === 0
+                      ? "Nothing due — no loan."
+                      : "Nothing due — no principal due this month."
+                  }
+                  value={principal}
+                  onChange={(value) => {
+                    setPrincipal(value);
+                    const filled = scheduledPrincipalFill(member);
+                    setUseScheduledPrincipal(paise(filled) > 0 && (moneyPayload(value) || "0.00") === filled);
+                    setPreview(null);
+                    setNotice("");
+                  }}
+                />
               </div>
             </div>
           )}
           <div className="mt-4 grid gap-3">
-            {paise(member.loanOutstanding) > 0 && paise(scheduledPrincipalFill(member)) > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !useScheduledPrincipal;
-                  setUseScheduledPrincipal(next);
-                  setPrincipal(next ? scheduledPrincipalFill(member) : "");
-                  setPreview(null);
-                }}
-                className={`flex min-h-14 items-start justify-between gap-4 rounded-2xl border px-4 py-3 text-left ${useScheduledPrincipal ? "border-moss bg-white" : "border-line bg-paper"}`}
-              >
-                <div>
-                  <div className="font-medium">Scheduled principal</div>
-                  <div className="text-xs text-muted">Fill {formatINR(scheduledPrincipalFill(member))}, this month's principal on the sheet. A new loan or a changed schedule starts next month. Leave unchecked to type any amount.</div>
-                </div>
-                <span className={`mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md border text-sm ${useScheduledPrincipal ? "border-moss bg-moss text-white" : "border-line bg-white text-transparent"}`}>✓</span>
-              </button>
-            )}
-            {paise(member.loanOutstanding) > 0 ? (
-              <Field label="Principal to repay" value={principal} onChange={(value) => {
-                const next = value.replace(/[^\d.]/g, "");
-                setPrincipal(next);
-                const filled = scheduledPrincipalFill(member);
-                setUseScheduledPrincipal(paise(filled) > 0 && (moneyPayload(next) || "0.00") === filled);
-                setPreview(null);
-              }} inputMode="decimal" selectOnFocus placeholder="0.00" />
-            ) : (
-              <Field label="Principal to repay" value="0.00" onChange={() => undefined} disabled title="No loan" />
-            )}
-            <p className="text-xs text-muted">{paise(member.loanOutstanding) > 0 ? `Loan left ${formatINR(member.loanOutstanding)}. Type any principal they are repaying today.` : "No loan"}</p>
-          </div>
-          <div className="mt-4 grid gap-3">
-            {parts && paise(parts.penalty) > 0 && (
-              <div className={`rounded-2xl border px-4 py-3 ${receivePenalty ? "border-moss bg-white" : "border-line bg-paper"}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !receivePenalty;
-                    setReceivePenalty(next);
-                    setPenaltyReceived(next ? parts.penalty : "");
-                    setPreview(null);
-                    setNotice("");
-                  }}
-                  className="flex w-full min-h-12 items-start justify-between gap-4 text-left"
-                >
-                  <div>
-                    <div className="font-medium">Receive penalty</div>
-                    <div className="text-xs text-muted">Collect some or all of {formatINR(parts.penalty)}. What you do not take stays due next month. Collected penalty joins the interest &amp; penalty pool when you distribute.</div>
-                  </div>
-                  <span className={`mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-md border text-sm ${receivePenalty ? "border-moss bg-moss text-white" : "border-line bg-white text-transparent"}`}>✓</span>
-                </button>
-                {receivePenalty && (
-                  <div className="mt-3">
-                    <Field label="Penalty received today" value={penaltyReceived} onChange={(value) => { setPenaltyReceived(value.replace(/[^\d.]/g, "")); setPreview(null); }} inputMode="decimal" selectOnFocus placeholder="0.00" />
-                    {paise(parts.penalty) > paise(receiveAmount) && (
-                      <p className="mt-1 text-xs text-muted">{formatINR(fromPaise(paise(parts.penalty) - paise(receiveAmount)))} remains and will be due next month.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
             {shortOnInstallment && (
               <div className={`rounded-2xl border px-4 py-3 ${nextMonthPenalty ? "border-moss bg-white" : "border-line bg-paper"}`}>
                 <button
@@ -1126,51 +1420,132 @@ export function AdminPay() {
             <div className="text-sm text-muted">Whole amount to collect</div>
             <div className="num text-3xl">{formatINR(collecting)}</div>
             <div className="mt-1 text-sm">{rupeesInWords(collecting)}</div>
-            <p className="mt-2 text-sm text-muted">
-              {formatINR(payingAmount)} due
-              {paise(principalAmount || "0.00") > 0 ? ` + ${formatINR(principalAmount)} principal` : ""}
-              {paise(receiveAmount) > 0 ? ` + ${formatINR(receiveAmount)} penalty received` : ""}
-              {paise(principalAmount || "0.00") > 0 || paise(receiveAmount) > 0 ? ` = ${formatINR(collecting)}` : ""}
-              {paise(carry) > 0 ? ` · ${formatINR(carry)} due added next month` : ""}
-              {paise(unpaidPrincipal) > 0 ? ` · ${formatINR(unpaidPrincipal)} principal still due` : ""}
-              {paise(deferPenalty) > 0 ? ` · ${formatINR(deferPenalty)} next-month penalty, not collected today` : ""}
-            </p>
+            <div className="mt-3 space-y-2 text-sm text-muted">
+              <p>
+                {formatINR(payingAmount)} installment
+                {paise(receiveAmount) > 0 ? ` + ${formatINR(receiveAmount)} penalty` : ""}
+                {paise(principalAmount || "0.00") > 0 ? ` + ${formatINR(principalAmount)} principal` : ""}
+                {paise(collecting) > 0 ? ` = ${formatINR(collecting)} collected today` : ""}
+                {collecting === "0.00" ? "Nothing collected today (₹0 receipt)." : ""}
+              </p>
+              {parts && (
+                <p>
+                  Installment {formatINR(installmentPayingToday)} of {formatINR(parts.installmentCollectDue)} paying today
+                  {paise(carry) === 0 && paise(installmentPayingToday) >= paise(parts.installmentCollectDue) ? " — full installment." : ""}
+                </p>
+              )}
+              {(paise(carry) > 0 || paise(unpaidPrincipal) > 0 || paise(deferPenalty) > 0) && (
+                <div>
+                  <div className="font-medium text-ink">Pending / added next month</div>
+                  <ul className="mt-1 space-y-0.5">
+                    {paise(carry) > 0 && (
+                      <li>{formatINR(carry)} unpaid installment added to next month</li>
+                    )}
+                    {paise(unpaidPrincipal) > 0 && (
+                      <li>{formatINR(unpaidPrincipal)} principal still due on the loan</li>
+                    )}
+                    {paise(deferPenalty) > 0 && (
+                      <li>{formatINR(deferPenalty)} penalty for next month (not collected today)</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-3"><Field label="Reason" value={reason} onChange={setReason} /></div>
+          {collectInputError && <p className="mt-3 text-sm text-clay">{collectInputError}</p>}
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <Button tone="ghost" loading={previewLoading} disabled={!period} onClick={async () => {
+            <Button tone="ghost" loading={previewLoading} disabled={!period || !parts || !!collectInputError} onClick={async () => {
               setPreviewLoading(true);
               setError("");
+              if (member && parts) {
+                const inputErr = validateCollectPaymentInputs(parts, member, {
+                  payShare,
+                  payCurrentInterest,
+                  payPreviousShare,
+                  payPreviousInterest,
+                  penaltyReceived,
+                  principal,
+                });
+                if (inputErr) {
+                  setError(inputErr);
+                  setPreviewLoading(false);
+                  return;
+                }
+              }
               try {
+                const receipt = buildCollectAllocation(
+                  parts!,
+                  payShare,
+                  payCurrentInterest,
+                  payPreviousShare,
+                  payPreviousInterest,
+                  principalAmount || "0.00",
+                  receiveAmount,
+                );
+                setPreviewBreakdown(receipt.breakdown.filter((row) => paise(row.amount) > 0));
                 setPreview(await api("/api/payments/preview", { method: "POST", body: JSON.stringify({
                   memberId,
                   period,
-                  amount: collecting,
-                  ...(paise(receiveAmount) > 0 ? { collectPenalty: true, collectPenaltyAmount: receiveAmount } : {}),
+                  amount: receipt.amount,
+                  allocation: receipt.allocation,
+                  ...(receipt.shareSplit ? { shareSplit: receipt.shareSplit } : {}),
                   ...(paise(deferPenalty) > 0 ? { nextMonthPenalty: deferPenalty } : {}),
                 }) }));
-                setNotice(collecting === "0.00" ? "₹0 receipt. No cash is taken. Unpaid due still goes to next month." : "");
+                setNotice(receipt.amount === "0.00" ? "₹0 receipt. No cash is taken. Unpaid due still goes to next month." : "");
               }
               catch (err) { setPreview(null); setError(err instanceof Error ? err.message : "Preview failed"); }
               finally { setPreviewLoading(false); }
             }}>Preview split</Button>
-            <Button loading={confirmLoading} disabled={!period} onClick={async () => {
+            <Button loading={confirmLoading} disabled={!period || !parts || !!collectInputError} onClick={async () => {
               setConfirmLoading(true);
               setError("");
+              if (member && parts) {
+                const inputErr = validateCollectPaymentInputs(parts, member, {
+                  payShare,
+                  payCurrentInterest,
+                  payPreviousShare,
+                  payPreviousInterest,
+                  penaltyReceived,
+                  principal,
+                });
+                if (inputErr) {
+                  setError(inputErr);
+                  setConfirmLoading(false);
+                  return;
+                }
+              }
               try {
+                const receipt = buildCollectAllocation(
+                  parts!,
+                  payShare,
+                  payCurrentInterest,
+                  payPreviousShare,
+                  payPreviousInterest,
+                  principalAmount || "0.00",
+                  receiveAmount,
+                );
                 await api("/api/payments", { method: "POST", body: JSON.stringify({
                   memberId,
                   period,
-                  amount: collecting,
+                  amount: receipt.amount,
+                  allocation: receipt.allocation,
+                  ...(receipt.shareSplit ? { shareSplit: receipt.shareSplit } : {}),
                   paidOn: todayISO(),
-                  reason: collecting === "0.00" ? `${reason} Marked collected at ₹0.` : reason,
+                  reason: receipt.amount === "0.00" ? `${reason} Marked collected at ₹0.` : reason,
                   idempotencyKey: newId(),
-                  ...(paise(receiveAmount) > 0 ? { collectPenalty: true, collectPenaltyAmount: receiveAmount } : {}),
                   ...(paise(deferPenalty) > 0 ? { nextMonthPenalty: deferPenalty } : {}),
                 }) });
                 setCollectedNow((prev) => new Set(prev).add(memberId));
                 bumpBooks();
-                navigate("/app/payments");
+                const memberName = member?.name ?? "Member";
+                showToast(
+                  receipt.amount === "0.00"
+                    ? `Payment recorded for ${memberName} (₹0 — marked collected).`
+                    : `Payment successful — ${formatINR(receipt.amount)} collected from ${memberName}.`,
+                );
+                const returnTo = collectPaymentReturnTo(location.state, location.search);
+                navigate(returnTo ?? "/app/payments");
               } catch (err) { setError(err instanceof Error ? err.message : "Payment failed"); }
               finally { setConfirmLoading(false); }
             }}>Confirm</Button>
@@ -1178,9 +1553,15 @@ export function AdminPay() {
           {previewLoading && <ListSkeleton count={2} />}
           {!previewLoading && preview && (
             <div className="mt-4 grid gap-1 text-sm">
-              {preview.allocation.filter((row: { amount: string }) => row.amount !== "0.00").map((row: { component: string; amount: string }) => (
-                <div key={row.component} className="flex justify-between">
-                  <span>{{ SHARE: "Monthly share", PREVIOUS_INTEREST: "Pending from last month", CURRENT_INTEREST: "Interest on the loan", PRINCIPAL: "Principal repaid", PENALTY: "Penalty received" }[row.component] ?? row.component}</span>
+              {(previewBreakdown.length > 0
+                ? previewBreakdown
+                : preview.allocation.filter((row: { amount: string }) => row.amount !== "0.00").map((row: { component: string; amount: string }) => ({
+                    label: { SHARE: "Share (this month + pending share)", PREVIOUS_INTEREST: "Pending interest from last month", CURRENT_INTEREST: "Interest on the loan", PRINCIPAL: "Principal repaid", PENALTY: "Penalty received" }[row.component] ?? row.component,
+                    amount: row.amount,
+                  }))
+              ).map((row: { label: string; amount: string }) => (
+                <div key={row.label} className="flex justify-between">
+                  <span>{row.label}</span>
                   <Money value={row.amount} />
                 </div>
               ))}
@@ -1821,6 +2202,7 @@ export function AdminInterest() {
 }
 
 export function AdminClose() {
+  const bumpBooks = useBumpBooks();
   const [preview, setPreview] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
@@ -1887,6 +2269,20 @@ export function AdminClose() {
           )}
         </Card>
       )}
+      {!previewLoading && preview && !preview.collectionsComplete && (preview.membersWithoutReceipt?.length ?? 0) > 0 && (
+        <Card className="border-clay/30 bg-clay/5">
+          <p className="font-medium text-clay">Collect every member before closing</p>
+          <p className="mt-1 text-sm text-muted">
+            Each active member needs a receipt for {preview.month} (₹0 is fine if you mark them collected with no cash).
+          </p>
+          <ul className="mt-2 list-inside list-disc text-sm text-muted">
+            {(preview.membersWithoutReceipt as { name: string; totalDue: string }[]).map((row) => (
+              <li key={row.name}>{row.name} — no receipt yet ({formatINR(row.totalDue)} due on books)</li>
+            ))}
+          </ul>
+          <Link to="/app/month-sheet" className="mt-3 inline-block text-sm font-semibold text-moss">Month to collect →</Link>
+        </Card>
+      )}
       {!previewLoading && preview && (
         <Card>
           <h2 className="text-xl font-semibold">{preview.checks.ok ? "Everything reconciles" : "Financial mismatch detected"}</h2>
@@ -1908,12 +2304,13 @@ export function AdminClose() {
             full
             className="mt-3"
             loading={closeLoading}
-            disabled={!preview.checks.ok}
+            disabled={!preview.checks.ok || preview.collectionsComplete === false}
             onClick={async () => {
               setCloseLoading(true);
               setError("");
               try {
                 await api("/api/monthly-close/confirm", { method: "POST", body: JSON.stringify({ confirm: true, reason }) });
+                bumpBooks();
                 location.href = "/app";
               } catch (err) {
                 const details = err instanceof ApiError ? err.details : null;
@@ -1999,6 +2396,8 @@ export function AdminSettings() {
 }
 
 function SocietyCard({ settings, owner, onSaved }: { settings: any; owner: boolean; onSaved: (saved: Record<string, string>) => void }) {
+  const bumpBooks = useBumpBooks();
+  const { refresh: refreshAuth } = useAuth();
   const [form, setForm] = useState({ name: settings.name, address: settings.address, phone: settings.phone, email: settings.email });
   const [reason, setReason] = useState("Updated the society details");
   const [error, setError] = useState("");
@@ -2027,6 +2426,8 @@ function SocietyCard({ settings, owner, onSaved }: { settings: any; owner: boole
         try {
           await api("/api/settings", { method: "PATCH", body: JSON.stringify({ ...form, phone: form.phone.trim() ? normalizeMobile(form.phone) ?? form.phone : "", reason }) });
           onSaved(form);
+          bumpBooks();
+          await refreshAuth();
           setError("");
           setSaved("Society details saved.");
         } catch (err) {
@@ -2049,6 +2450,7 @@ function SocietyCard({ settings, owner, onSaved }: { settings: any; owner: boole
 }
 
 function MonthlyShareCard({ share, owner, onSaved }: { share: string; owner: boolean; onSaved: (share: string) => void }) {
+  const bumpBooks = useBumpBooks();
   const [value, setValue] = useState(share);
   const [reason, setReason] = useState("Changed the monthly share");
   const [error, setError] = useState("");
@@ -2064,6 +2466,7 @@ function MonthlyShareCard({ share, owner, onSaved }: { share: string; owner: boo
           try {
             await api("/api/settings", { method: "PATCH", body: JSON.stringify({ defaultMonthlyShare: value, reason }) });
             onSaved(value);
+            bumpBooks();
             setError("");
             setSaved(`New members will pay ${formatINR(value)} each month.`);
           } catch (err) {
@@ -2124,6 +2527,7 @@ function rateToPercent(rate: string) {
 }
 
 function InterestRateCard({ rate, onSaved }: { rate: string; onSaved: (rate: string) => void }) {
+  const bumpBooks = useBumpBooks();
   const [percent, setPercent] = useState(rateToPercent(rate));
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -2140,6 +2544,7 @@ function InterestRateCard({ rate, onSaved }: { rate: string; onSaved: (rate: str
         try {
           const updated = await api<{ interestRate: string }>("/api/settings", { method: "PATCH", body: JSON.stringify({ interestPercent: percent, reason: "Society admin set the monthly interest rate" }) });
           onSaved(updated.interestRate);
+          bumpBooks();
           setSaved(`Saved at ${percent}% per month.`);
           setError("");
         } catch (err) { setError(err instanceof Error ? err.message : "Could not save the interest rate"); }

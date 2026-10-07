@@ -10,6 +10,7 @@ import { adminDashboard, listMembers, memberStatement, monthSheet, reportData } 
 import {
   addPenalty,
   confirmClose,
+  markMissingReceiptsForOpenMonth,
   confirmDistribution,
   createLoan,
   createMember,
@@ -270,6 +271,7 @@ describe("12-month society books", () => {
       await monthSheet(auth, period);
       const preview = await previewClose(auth);
       expect(preview.period).toBe(period);
+      await markMissingReceiptsForOpenMonth(auth);
       await confirmClose(auth, `Close ${label}`);
       period = nextPeriod(period);
       await assertBooks(auth, `${label} next month open`);

@@ -23,13 +23,6 @@ const FONT_CANDIDATES = [
   "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
 ];
 
-const ALLOCATION_LABELS: Record<string, string> = {
-  SHARE: "Monthly share",
-  PREVIOUS_INTEREST: "Pending interest (prior month)",
-  CURRENT_INTEREST: "Interest on outstanding loan",
-  PRINCIPAL: "Principal repayment",
-  PENALTY: "Penalty",
-};
 
 function fontPath() {
   return FONT_CANDIDATES.find((file) => fs.existsSync(file)) ?? null;
@@ -133,7 +126,14 @@ function drawBrandHeader(
 function drawReceiptTitleAndMeta(
   doc: Doc,
   unicode: boolean,
-  input: { receiptNo: string; paidOn: string; period: string; memberName: string; memberNumber?: number },
+  input: {
+    receiptNo: string;
+    paidOn: string;
+    period: string;
+    memberName: string;
+    memberNumber?: number;
+    paidInFull: boolean;
+  },
 ) {
   const left = doc.page.margins.left;
   const width = contentWidth(doc);
@@ -142,10 +142,14 @@ function drawReceiptTitleAndMeta(
   doc.fillColor(MOSS).fontSize(22).text("Receipt", left, y0, { width: width * 0.45, lineBreak: false });
   doc.fontSize(10).fillColor(MUTED).text("Official payment record", left, y0 + 28, { width: width * 0.45, lineBreak: false });
 
-  const badgeW = 118;
+  const badgeW = input.paidInFull ? 118 : 132;
   const badgeX = left + width - badgeW;
-  doc.roundedRect(badgeX, y0, badgeW, 26, 13).fill(MOSS);
-  doc.fillColor("#ffffff").fontSize(10).text("Paid in full", badgeX, y0 + 8, { width: badgeW, align: "center", lineBreak: false });
+  doc.roundedRect(badgeX, y0, badgeW, 26, 13).fill(input.paidInFull ? MOSS : "#b45309");
+  doc.fillColor("#ffffff").fontSize(10).text(input.paidInFull ? "Paid in full" : "Partial payment", badgeX, y0 + 8, {
+    width: badgeW,
+    align: "center",
+    lineBreak: false,
+  });
 
   doc.y = y0 + 52;
 
@@ -166,23 +170,32 @@ function drawReceiptTitleAndMeta(
   doc.x = left;
 }
 
-function drawLineItemsTable(doc: Doc, unicode: boolean, rows: { label: string; amount: string }[], total: string) {
+function drawLineItemsTable(
+  doc: Doc,
+  unicode: boolean,
+  sectionTitle: string,
+  rows: { label: string; amount: string }[],
+  total: string,
+) {
   const left = doc.page.margins.left;
   const width = contentWidth(doc);
   const descW = width * 0.7;
   const amtW = width * 0.3;
   const amtX = left + descW;
 
+  doc.fontSize(8).fillColor(MUTED).text(sectionTitle, left, doc.y, { lineBreak: false });
+  doc.y += 12;
+
   const headerY = doc.y;
   doc.rect(left, headerY, width, 24).fill(MOSS);
   doc.fillColor("#ffffff").fontSize(9);
   doc.text("Description", left + 12, headerY + 7, { width: descW - 16, lineBreak: false });
-  doc.text("Amount", amtX, headerY + 7, { width: amtW - 12, align: "right", lineBreak: false });
+  doc.text("Collected", amtX, headerY + 7, { width: amtW - 12, align: "right", lineBreak: false });
   doc.y = headerY + 24;
 
   const bodyRows =
     rows.length === 0
-      ? [{ label: "No installment line was applied (zero-amount receipt).", amount: formatINR("0.00") }]
+      ? [{ label: "No cash collected (₹0 receipt — due may carry to next month).", amount: formatINR("0.00") }]
       : rows.map((row) => ({ label: row.label, amount: formatINR(row.amount) }));
 
   for (let index = 0; index < bodyRows.length; index += 1) {
@@ -274,7 +287,8 @@ export type PaymentReceiptPdfInput = {
   reason: string;
   note?: string;
   noteLines?: string[];
-  allocations: { component: string; amount: string }[];
+  collectedLines: { label: string; amount: string }[];
+  paidInFull: boolean;
 };
 
 export function sendPaymentReceiptPdf(res: Response, input: PaymentReceiptPdfInput) {
@@ -302,16 +316,10 @@ export function sendPaymentReceiptPdf(res: Response, input: PaymentReceiptPdfInp
     period: input.period,
     memberName: input.memberName,
     memberNumber: input.memberNumber,
+    paidInFull: input.paidInFull,
   });
 
-  const lineRows = input.allocations
-    .filter((row) => row.amount !== "0.00")
-    .map((row) => ({
-      label: ALLOCATION_LABELS[row.component] ?? row.component.replaceAll("_", " "),
-      amount: row.amount,
-    }));
-
-  drawLineItemsTable(doc, unicode, lineRows, input.amount);
+  drawLineItemsTable(doc, unicode, "Collected today", input.collectedLines, input.amount);
   const noteLines =
     input.noteLines ??
     [input.reason, input.note ?? ""].map((line) => line.trim()).filter(Boolean);
