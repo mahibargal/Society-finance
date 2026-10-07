@@ -204,15 +204,19 @@ function ReportsPage({ admin }: { admin: boolean }) {
         const bootstrap = (await fetchReportMonthSheetBootstrap(booksVersion)) as Sheet;
         if (cancelled) return;
         const effectivePeriod = period || bootstrap.period;
-        if (!period) setPeriod(effectivePeriod);
         const periods = bootstrap.periods;
 
         if (isMonthSheetReport(report)) {
-          const data = await api<Sheet>(
-            `/api/reports/${report}?period=${encodeURIComponent(effectivePeriod)}`,
-          );
+          const reuseBootstrap =
+            report === "month-sheet"
+            && effectivePeriod === bootstrap.period
+            && Array.isArray(bootstrap.rows)
+            && bootstrap.totals;
+          const data = reuseBootstrap
+            ? bootstrap
+            : await api<Sheet>(`/api/reports/${report}?period=${encodeURIComponent(effectivePeriod)}`);
           if (cancelled) return;
-          setSheet({ ...data, periods });
+          setSheet({ ...data, periods, period: data.period ?? effectivePeriod });
         } else {
           const query = reportUsesMonthFilter(report)
             ? `?period=${encodeURIComponent(effectivePeriod)}`

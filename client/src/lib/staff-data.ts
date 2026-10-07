@@ -139,6 +139,7 @@ export type MemberProfile = Record<string, unknown>;
 export type ReportMonthSheetBootstrap = {
   period: string;
   periods: string[];
+  month?: string;
   rows?: unknown[];
   totals?: Record<string, string>;
 };

@@ -65,7 +65,6 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
         const bootstrap = (await fetchReportMonthSheetBootstrap(booksVersion)) as MonthSheet;
         if (cancelled) return;
         const effectivePeriod = period || bootstrap.period;
-        if (!period) setPeriod(effectivePeriod);
         setOpenPeriod(bootstrap.period);
 
         if (kind === "monthly") {
@@ -74,9 +73,16 @@ function SocietyMonthBookView({ admin, kind }: { admin: boolean; kind: BookKind 
           setMonthlyRows(series);
           setSheet({ ...bootstrap, periods: bootstrap.periods, period: effectivePeriod, rows: [], totals: {} });
         } else {
-          const data = await api<MonthSheet>(`/api/reports/${kind}?period=${encodeURIComponent(effectivePeriod)}`);
+          const reuseBootstrap =
+            kind === "month-sheet"
+            && effectivePeriod === bootstrap.period
+            && Array.isArray(bootstrap.rows)
+            && bootstrap.totals;
+          const data = reuseBootstrap
+            ? bootstrap
+            : await api<MonthSheet>(`/api/reports/${kind}?period=${encodeURIComponent(effectivePeriod)}`);
           if (cancelled) return;
-          setSheet({ ...data, periods: bootstrap.periods });
+          setSheet({ ...data, periods: bootstrap.periods, period: data.period ?? effectivePeriod });
           setMonthlyRows([]);
         }
         setError("");
